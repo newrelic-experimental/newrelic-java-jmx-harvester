@@ -1,0 +1,110 @@
+plugins {
+    id "de.undercouch.download" version "4.1.1"
+}
+
+apply plugin: 'java'
+apply plugin: 'eclipse'
+apply plugin: 'idea'
+
+import de.undercouch.gradle.tasks.download.Download
+
+
+sourceCompatibility = JavaVersion.VERSION_1_6
+targetCompatibility = JavaVersion.VERSION_1_6
+
+group = 'com.newrelic.gpo'
+version = '3.5.1'
+
+def agentVersion='3.39.0'
+def agentJar ='newrelic-agent-'+agentVersion+'.jar'
+def agentRepo = 'https://repo1.maven.org/maven2/com/newrelic/agent/java/newrelic-agent/' + agentVersion + '/' + agentJar
+
+def tempDir = 'build/tmp'
+def buildLibsDir= project.libsDir
+def libDir=project.rootDir.toString()+"/lib"
+def jarName='jmx2insights'
+
+repositories {
+    flatDir(dirs: 'lib')
+
+    mavenCentral()
+}
+
+dependencies {
+    compile fileTree(dir: 'lib', includes: ['*.jar'])
+
+}
+
+jar {
+    manifest {
+        attributes  'Implementation-Title' : 'JMX2Insights',
+                    'Implementation-Version' : version
+    }
+    baseName jarName
+
+    doLast{
+        printf("Jar created %s\n", outputs.files.singleFile.toString())
+    }
+}
+
+compileJava{
+
+}
+
+
+task copyJar(type: Copy) {
+    from tempDir +'/'+ agentJar
+    into  libDir
+    include('*.jar')
+}
+task downloadZipFile(type: Download){
+    src agentRepo
+    mkdir tempDir
+    dest new File(tempDir, agentJar)
+
+}
+
+task downloadUnzipFile ( type: Copy) {
+    from zipTree(downloadZipFile.dest);
+    into libDir
+    include "*.jar"
+}
+
+task createPackage( type: Zip) {
+    def proot=project.rootDir.toString()
+    def releaseDir= proot +'/releases'
+    def configDir= proot +'/config'
+
+    from  ("${buildLibsDir}"){
+        include '*.jar'
+    }
+    from  ("${configDir}"){
+        include  'jmx2insights.yml'
+        include  'Readme.txt'
+    }
+    from  ("${proot}"){
+        include  'README.md'
+    }
+
+    baseName= jarName
+    destinationDir(file(releaseDir))
+
+    doLast{
+
+
+        printf("Release zip deployed to %s",  outputs.files.singleFile.toString())
+    }
+}
+
+downloadZipFile.mustRunAfter clean
+downloadZipFile.dependsOn clean
+downloadUnzipFile.mustRunAfter downloadZipFile
+downloadUnzipFile.dependsOn downloadZipFile
+copyJar.mustRunAfter downloadUnzipFile
+copyJar.dependsOn downloadUnzipFile
+compileJava.mustRunAfter copyJar
+compileJava.dependsOn copyJar
+jar.mustRunAfter compileJava
+jar.dependsOn compileJava
+createPackage.mustRunAfter jar
+createPackage.dependsOn jar
