@@ -1,0 +1,10 @@
+node_modules*
+tmp*
+*.DS_Store
+dist*
+.classpath
+.gitignore.swp
+.gradle
+.project
+.settings
+bin

@@ -13,7 +13,7 @@ import com.newrelic.agent.config.LabelsConfigImpl;
 import com.newrelic.gpo.jmx2insights.MBeanConfig;
 
 /**
- * The configuration management object for the extension. Provides a single place to look up and evaluate the state of the configuration in newrel.ic.yml.
+ * The configuration management object for the extension. Provides a single place to look up and evaluate the state of the configuration in newrelic.yml.
  * 
  * @author gil
  */
