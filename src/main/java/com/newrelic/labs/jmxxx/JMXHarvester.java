@@ -73,6 +73,40 @@ public class JMXHarvester extends AbstractService implements HarvestListener {
         Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] after harvest event end.");
     } //afterHarvest
 	
+    @Override
+    protected void doStop() throws Exception {
+
+        Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] The service is stopping.");
+    } //doStop
+
+    @SuppressWarnings("unchecked")
+    private void getJMXHarvesterConfig(AgentConfig _agentConfig) {
+
+        try {
+
+            if (_agentConfig == null) {
+                _agentConfig = ServiceFactory.getConfigService().getLocalAgentConfig();
+            }
+            Map<String, Object> props = _agentConfig.getProperty(Constantz.YML_SECTION);
+
+            jmx2insightsConfig = new JMX2InsightsConfig(props);
+            jmx2insightsConfig.setLabels(_agentConfig.getLabelsConfig().getLabels());
+
+            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Successfully loaded JMX2Insights Configuration");
+            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Configuration = " + props);
+            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] labels = " + _agentConfig.getLabelsConfig().getLabels());
+        } //try
+        catch (java.lang.Exception _e) {
+
+            Agent.LOG.error("[" + Constantz.EXTENSION_NAME + "] Problem loading the jmx2insights config from newrelic.yml. JMX2Insights set to enabled: false.");
+            Agent.LOG.error("[" + Constantz.EXTENSION_NAME + "] Message: " + _e.getMessage());
+
+            Map<String, Object> __disabledConfig = new HashMap<String, Object>();
+            __disabledConfig.put("enabled", "false");
+            jmx2insightsConfig = new JMX2InsightsConfig(__disabledConfig);
+        } //catch
+
+    } //getJMXHarvesterConfig
     
     /**
      * Agent config listener innerclass to listen for change events. 
@@ -83,7 +117,7 @@ public class JMXHarvester extends AbstractService implements HarvestListener {
 
             //reload the coquette configuration
             Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Reloading JMXHarvester Configuration");
-            getHarvesterConfig(_agentConfig);
+            getJMXHarvesterConfig(_agentConfig);
 
             //reload the memory thread enabled state
             if (memoryEventsThread != null){
