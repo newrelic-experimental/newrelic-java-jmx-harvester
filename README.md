@@ -1,8 +1,8 @@
 [![New Relic Experimental header](https://github.com/newrelic/opensource-website/raw/master/src/images/categories/Experimental.png)](https://opensource.newrelic.com/oss-category/#new-relic-experimental)
 
-# [JMX2Insights] 
+# JMX2Insights 
 
-README for JMX2Insights :: Version 3.5.1 :: September 2020
+JMX2Insights :: Version 3.5.1 :: September 2020
 ===================================================
 
 WHAT IT BE
