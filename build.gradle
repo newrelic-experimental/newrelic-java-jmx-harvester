@@ -9,13 +9,13 @@ apply plugin: 'idea'
 import de.undercouch.gradle.tasks.download.Download
 
 
-sourceCompatibility = JavaVersion.VERSION_1_6
-targetCompatibility = JavaVersion.VERSION_1_6
+sourceCompatibility = JavaVersion.VERSION_1_7
+targetCompatibility = JavaVersion.VERSION_1_7
 
 group = 'com.newrelic.gpo'
-version = '3.5.1'
+version = '3.5.2-SNAPSHOT'
 
-def agentVersion='3.39.0'
+def agentVersion='6.4.2'
 def agentJar ='newrelic-agent-'+agentVersion+'.jar'
 def agentRepo = 'https://repo1.maven.org/maven2/com/newrelic/agent/java/newrelic-agent/' + agentVersion + '/' + agentJar
 

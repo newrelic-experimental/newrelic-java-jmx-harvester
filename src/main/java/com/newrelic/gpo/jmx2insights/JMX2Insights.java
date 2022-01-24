@@ -7,10 +7,9 @@ import javax.management.MBeanOperationInfo;
 import javax.management.ObjectInstance;
 import javax.management.ObjectName;
 import javax.management.openmbean.CompositeData;
-import javax.management.openmbean.TabularData;
+import javax.naming.InitialContext;
 
 import java.lang.management.ManagementFactory;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.Iterator;
@@ -28,7 +27,6 @@ import com.newrelic.agent.stats.StatsEngine;
 import com.newrelic.api.agent.NewRelic;
 import com.newrelic.agent.config.AgentConfig;
 import com.newrelic.agent.config.AgentConfigListener;
-import com.newrelic.agent.deps.com.google.common.collect.Multiset.Entry;
 
 /* jmx2insights */
 import com.newrelic.gpo.jmx2insights.Constantz;
@@ -43,10 +41,12 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
     private int invocationCounter = 1;
     private JMX2InsightsConfig jmx2insightsConfig = null;
     private MemoryEventsThread memoryEventsThread = null; //first implementation of the memory thread.
+    private MBeanServer mbeanServer = null;
 
     public JMX2Insights() {
 
         super(JMX2Insights.class.getSimpleName());
+
         Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Initializing Service Class.");
 
 
@@ -77,87 +77,75 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
         try {
 
             Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Processing harvest event for Agent.");
+            if ((jmx2insightsConfig == null)  || (!jmx2insightsConfig.isEnabled())){
+                Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Disabled.");
+                return;
+            }
 
-            if (jmx2insightsConfig != null) {
 
-                if (jmx2insightsConfig.isEnabled()) {
+            Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Enabled.");
 
-                    Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Enabled.");
+            //execute interval counter should the frequency be equal to the counter
+            if (jmx2insightsConfig.getFrequency() != invocationCounter) {
 
-                    //execute interval counter should the frequency be equal to the counter
-                    if (jmx2insightsConfig.getFrequency() == invocationCounter) {
+                boolean isInvocationCounterGreater= (invocationCounter > jmx2insightsConfig.getFrequency());
 
-                        Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Matched invocation counter ... execute ops pending ....");
-                        if (jmx2insightsConfig.getMode().equals("disco")) {
+                invocationCounter = (isInvocationCounterGreater)? 1: invocationCounter++;
+                String message = (isInvocationCounterGreater)?" Invocation counter was placed in an unexpected state. Resetting to 1" :"Skipping the harvest";
 
-                            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Starting disco jmx harvest.");
-                            executeDisco();
-                            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Finished disco jmx harvest.");
+                Agent.LOG.info(String.format("[%s] %s",Constantz.EXTENSION_NAME , message));
+                return;
+            }
 
-                        } //if
-                        else if (jmx2insightsConfig.getMode().equals("strict")) {
+            mbeanServer = ManagementFactory.getPlatformMBeanServer();
 
-                            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Starting strict jmx harvest.");
-                            executeStrict();
-                            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Finished strict jmx harvest.");
+            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Matched invocation counter ... execute ops pending ....");
+            switch(jmx2insightsConfig.getMode()){
+                case OperationMode.DISCO:
+                    Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Starting disco jmx harvest.");
+                    executeDisco();
+                    Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Finished disco jmx harvest.");
 
-                        } //else if
-                        else if (jmx2insightsConfig.getMode().equals("promiscuous")) {
+                    break;
+                case OperationMode.STRICT:
+                    Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Starting strict jmx harvest.");
+                    executeStrict();
+                    Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Finished strict jmx harvest.");
 
-                            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Starting promiscuous jmx harvest.");
-                            executePromiscuous();
-                            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Finished promiscuous jmx harvest.");
+                    break;
+                case OperationMode.PROMISCUOUS:
+                    Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Starting promiscuous jmx harvest.");
+                    executePromiscuous();
+                    Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Finished promiscuous jmx harvest.");
 
-                        } //else if
-                        else if (jmx2insightsConfig.getMode().equals("open")) {
+                    break;
+                case OperationMode.OPEN:
+                    Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Starting open jmx harvest.");
+                    executeOpen();
+                    Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Finished open jmx harvest.");
 
-                            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Starting open jmx harvest.");
-                            executeOpen();
-                            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Finished open jmx harvest.");
-                        } //else if
-                        else {
+                    break;
+                default:
+                    Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Unknown JMX2Insights configuration mode: " + jmx2insightsConfig.getMode() + " must be one of strict, open, disco, or promiscuous.");
+                    break;
+            }
 
-                            Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Unknown JMX2Insights configuration mode: " + jmx2insightsConfig.getMode() + " must be one of strict, open, disco, or promiscuous.");
-                        } //else
 
-                        //process the listed operations
-                        if (jmx2insightsConfig.operationsDefined()) {
+            //process the listed operations
+            if (jmx2insightsConfig.operationsDefined()) {
 
-                            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Starting MBean operations execution.");
-                            executeOperations();
-                            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Finished MBean operations execution.");
-                        } //if
-                        else {
-
-                            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] No MBean operations have been defined.");
-                        } //else
-
-                        //reset the invocation counter to 1.
-                        invocationCounter = 1;
-                    } //if
-                    else {
-
-                        if (invocationCounter > jmx2insightsConfig.getFrequency()) {
-
-                            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Invocation counter was placed in an unexpected state. Resetting to 1. ");
-                            invocationCounter = 1;
-
-                        } //if
-                        else {
-
-                            invocationCounter++;
-                            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Skipping the harvest. " + invocationCounter);
-                        } //else
-
-                    } //else
-
-                } //if
-                else {
-
-                    Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Disabled.");
-                } //else
-
+                Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Starting MBean operations execution.");
+                executeOperations();
+                Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Finished MBean operations execution.");
             } //if
+            else {
+
+                Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] No MBean operations have been defined.");
+            } //else
+
+            //reset the invocation counter to 1.
+            invocationCounter = 1;
+
 
         } //try
         catch (java.lang.Exception _e) {
@@ -289,7 +277,6 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
 
     private void executeStrict() {
 
-        MBeanServer __mbeanServer = ManagementFactory.getPlatformMBeanServer();
         MBeanConfig[] __mbeans = jmx2insightsConfig.getMBeans();
         ObjectName __tempMBean = null;
 
@@ -330,7 +317,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
                 } //if
 
                 __tempMBean = new ObjectName(__mbeans[i].getMBeanName());
-                __oiSet = __mbeanServer.queryMBeans(__tempMBean, null);
+                __oiSet = mbeanServer.queryMBeans(__tempMBean, null);
 
                 if (__oiSet == null) {
                     Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Unable to find the bean defined by configuration: " + __mbeans[i].getMBeanName());
@@ -363,7 +350,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
 
                     for (int ii = 0; ii < __macAttributes.length; ii++) {
 
-                        handleAttributeValue(__mbeanServer.getAttribute(__oiInstance.getObjectName(), __macAttributes[ii].getAttributeName()), __macAttributes[ii], __tempEventAttributes, __tempTabularEventVector);
+                        handleAttributeValue(mbeanServer.getAttribute(__oiInstance.getObjectName(), __macAttributes[ii].getAttributeName()), __macAttributes[ii], __tempEventAttributes, __tempTabularEventVector);
                     } //for
 
 
@@ -401,8 +388,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
 
     private void salope() {
 
-        MBeanServer __mbeanServer = ManagementFactory.getPlatformMBeanServer();
-        Set<ObjectInstance> __mbeanInstances = __mbeanServer.queryMBeans(null, null);
+        Set<ObjectInstance> __mbeanInstances = mbeanServer.queryMBeans(null, null);
         Iterator<ObjectInstance> __iterator = __mbeanInstances.iterator();
 
         Map<String, Object> __tempEventAttributes = null;
@@ -429,14 +415,14 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
                 __tempEventAttributes.put("MBeanInstanceType",  (__htOIProperties.get("type") == null)? "unknown_type": __htOIProperties.get("type"));
 
 
-                __mbiTempInfo = __mbeanServer.getMBeanInfo(__oiInstance.getObjectName());
+                __mbiTempInfo = mbeanServer.getMBeanInfo(__oiInstance.getObjectName());
                 __mbaiAttributes = __mbiTempInfo.getAttributes();
 
                 for (int i = 0; i < __mbaiAttributes.length; i++) {
 
                     if (__mbaiAttributes[i].isReadable() && __mbaiAttributes[i].getName() != null) {
 
-                        handleAttributeValue(__mbeanServer.getAttribute(__oiInstance.getObjectName(), __mbaiAttributes[i].getName()), new MBeanAttributeConfig(__mbaiAttributes[i].getName()), __tempEventAttributes, __tempTabularEventVector);
+                        handleAttributeValue(mbeanServer.getAttribute(__oiInstance.getObjectName(), __mbaiAttributes[i].getName()), new MBeanAttributeConfig(__mbaiAttributes[i].getName()), __tempEventAttributes, __tempTabularEventVector);
 
                     } //if
                     else {
@@ -485,7 +471,6 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
 
     private void executeOpen() {
 
-        MBeanServer __mbeanServer = ManagementFactory.getPlatformMBeanServer();
         MBeanConfig[] __mbeans = jmx2insightsConfig.getMBeans();
         ObjectName __tempMBean = null;
         Map<String, Object> __tempEventAttributes = null;
@@ -518,7 +503,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
 
 
                     __tempMBean = new ObjectName(__mbeans[i].getMBeanName());
-                    __oiSet = __mbeanServer.queryMBeans(__tempMBean, null);
+                    __oiSet = mbeanServer.queryMBeans(__tempMBean, null);
                     __oiIterator = __oiSet.iterator();
 
                     while (__oiIterator.hasNext()) {
@@ -536,7 +521,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
 
                         try {
 
-                            __mbiTempInfo = __mbeanServer.getMBeanInfo(__oiInstance.getObjectName());
+                            __mbiTempInfo = mbeanServer.getMBeanInfo(__oiInstance.getObjectName());
                             __mbaiAttributes = __mbiTempInfo.getAttributes();
 
                             //report all the attributes for this mbean
@@ -544,7 +529,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
 
                                 if (__mbaiAttributes[ii].isReadable()) {
 
-                                    handleAttributeValue(__mbeanServer.getAttribute(__oiInstance.getObjectName(), __mbaiAttributes[ii].getName()), new MBeanAttributeConfig(__mbaiAttributes[ii].getName()), __tempEventAttributes, __tempTabularEventVector);
+                                    handleAttributeValue(mbeanServer.getAttribute(__oiInstance.getObjectName(), __mbaiAttributes[ii].getName()), new MBeanAttributeConfig(__mbaiAttributes[ii].getName()), __tempEventAttributes, __tempTabularEventVector);
 
                                 } //if
                                 else {
@@ -595,8 +580,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
 
     private void executeDisco() {
 
-        MBeanServer __mbeanServer = ManagementFactory.getPlatformMBeanServer();
-        Set<ObjectInstance> __mbeanInstances = __mbeanServer.queryMBeans(null, null);
+        Set<ObjectInstance> __mbeanInstances = mbeanServer.queryMBeans(null, null);
         Iterator<ObjectInstance> __iterator = __mbeanInstances.iterator();
 
         try {
@@ -613,7 +597,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
                 Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Object Name Domain: " + objectName.getDomain());
 
                 Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] *** MBEAN ATTRIBUTES *** ");
-                MBeanInfo __info = __mbeanServer.getMBeanInfo(objectName);
+                MBeanInfo __info = mbeanServer.getMBeanInfo(objectName);
                 MBeanAttributeInfo[] __mbai = __info.getAttributes();
 
                 for (int i = 0; i < __mbai.length; i++) {
@@ -848,7 +832,6 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
 
     private void executeOperations() {
 
-        MBeanServer __mbeanServer = ManagementFactory.getPlatformMBeanServer();
         MBeanOperationConfig[] __operations = jmx2insightsConfig.getMBeanOperationConfigs();
 
         ObjectName __tempMBean = null;
@@ -863,7 +846,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
             try {
 
                 __tempMBean = new ObjectName(__operations[i].getMBeanName());
-                __oiSet = __mbeanServer.queryMBeans(__tempMBean, null);
+                __oiSet = mbeanServer.queryMBeans(__tempMBean, null);
 
                 //determine what to do with a null result
                 if (__oiSet != null) {
@@ -907,7 +890,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
                             //dynacache stats ...
                             Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Beta --> Attempting WebSphere DynaCache operations. ");
 
-                            String __cacheinstancenames[] = (String[]) __mbeanServer.invoke(__tempMBean, "getCacheInstanceNames", null, null);
+                            String __cacheinstancenames[] = (String[]) mbeanServer.invoke(__tempMBean, "getCacheInstanceNames", null, null);
 
                             for (int k = 0; k < __cacheinstancenames.length; k++) {
 
@@ -915,7 +898,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
                                 String __cacheStats[] = {"MemoryCacheEntries", "MemoryCacheSizeInMB", "CacheHits", "CacheMisses", "CacheRemoves"};
                                 Object __params[] = {__cacheInstance, __cacheStats};
                                 String __signature[] = {String.class.getName(), String[].class.getName()};
-                                String __result[] = (String[]) __mbeanServer.invoke(__tempMBean, "getCacheStatistics", __params, __signature);
+                                String __result[] = (String[]) mbeanServer.invoke(__tempMBean, "getCacheStatistics", __params, __signature);
 
                                 for (int l = 0; l < __result.length; l++) {
 
@@ -976,6 +959,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
 
     //listen to the agent configuration and reload if we need to - allows dynamic configuration of jmx2insights
     protected final AgentConfigListener configListener = new AgentConfigListener() {
+
         @Override
         public void configChanged(String _appName, AgentConfig _agentConfig) {
 
@@ -1001,3 +985,13 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
 
     }
 } //JMX2Insights
+
+
+interface OperationMode {
+
+    static final String DISCO= "disco";
+    static final String STRICT= "strict";
+    static final String PROMISCUOUS= "promiscuous";
+    static final String OPEN= "open";
+
+}
