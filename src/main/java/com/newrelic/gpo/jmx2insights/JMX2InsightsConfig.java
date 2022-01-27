@@ -11,6 +11,7 @@ import com.newrelic.agent.config.BaseConfig;
 import com.newrelic.agent.config.LabelsConfig;
 import com.newrelic.agent.config.LabelsConfigImpl;
 import com.newrelic.gpo.jmx2insights.MBeanConfig;
+import com.newrelic.telemetry.Attributes;
 
 /**
  * The configuration management object for the extension. Provides a single place to look up and evaluate the state of the configuration in newrelic.yml.
@@ -35,7 +36,11 @@ public class JMX2InsightsConfig extends BaseConfig {
     public static final String BETA_FEATURES = "beta_features";
     public static final Boolean DEFAULT_BETA_FEATURES = Boolean.FALSE;
     public static final String LABELS = "labels";
-
+    public static final String TELEMETRY_MODEL = "telemetry_model";
+    public static final String DEFAULT_TELEMETRY_MODEL = "metrics";
+    public static final String METRIC_PREFIX = "metric_prefix";
+    public static final String DEFAULT_METRIC_PREFIX = "labs.jmx";
+    
     //defaults
     private boolean isEnabled = false;
     private int frequency = 1;
@@ -45,6 +50,12 @@ public class JMX2InsightsConfig extends BaseConfig {
     private MBeanOperationConfig[] mbean_operations;
     private boolean memory_events = false;
     private boolean beta_features = false;
+    private String appName = "My Application";
+    private String licenseKey = "n0ne";
+    private String hostname = "unknown";
+    private String entityGuid = "unknown";
+    private String metric_prefix = "labs.jmx";
+    private String telemetry_model = "metrics";
 
 
     private Map<String,String> labels;
@@ -61,7 +72,8 @@ public class JMX2InsightsConfig extends BaseConfig {
 			event_name = getProperty(EVENT_NAME, DEFAULT_EVENT_NAME);
 			memory_events = getProperty(MEMORY_EVENTS, DEFAULT_MEMORY_EVENTS);
 			beta_features = getProperty(BETA_FEATURES, DEFAULT_BETA_FEATURES);
-
+			metric_prefix = getProperty(METRIC_PREFIX, DEFAULT_METRIC_PREFIX);
+			telemetry_model = getProperty(TELEMETRY_MODEL, DEFAULT_TELEMETRY_MODEL);
 	        Vector<MBeanConfig> __vTEMP = new Vector<MBeanConfig>();
 	        
 	        //collect all mbean operations definitions too and stach them as an array too
@@ -104,11 +116,23 @@ public class JMX2InsightsConfig extends BaseConfig {
 			frequency = 1;
 			event_name = "JMX";
 			memory_events = false;
-			beta_features = false;		
+			beta_features = false;
+			metric_prefix = METRIC_PREFIX;
+			telemetry_model	= TELEMETRY_MODEL;
 		} //catch
         
 	} //JMX2InsightsConfig
 
+	public String getTelemetryModel() {
+		
+		return(telemetry_model);
+	} //getTelemetryModel
+	
+	public String getMetricPrefix() {
+		
+		return(metric_prefix);
+	} //getMetricPrefix
+	
     public boolean isEnabled() {
 	    	
 	    	return(isEnabled);
@@ -170,4 +194,62 @@ public class JMX2InsightsConfig extends BaseConfig {
         this.labels = labels;
     }
 
+    public String getAppName() {
+    	
+    	return(appName);
+    } //getAppName
+    
+    public void setAppName(String _appName) {
+    	
+    	appName = _appName;
+    } //setAppName
+
+    public String getLicenseKey() {
+    	
+    	return(licenseKey);
+    } //getLicenseKey
+    
+	public void setLicenseKey(String _licenseKey) {
+		
+		licenseKey = _licenseKey;
+	} //setLicenseKey
+
+	public String getHostname() {
+		
+		return(hostname);
+	} //getHostname
+	
+	public void setHostname(String _hostname) {
+
+		if (_hostname != null) {
+			hostname = _hostname;
+		} //if
+		
+		
+	} //setHostname
+
+	public String getEntityGuid() {
+		
+		return(entityGuid);
+	} //getEntityGuid
+	
+	public void setEntityGuid(String _entityGuid) {
+
+		if (_entityGuid != null) {
+			entityGuid = _entityGuid;
+		} //if		
+	} //setEntityGuid
+
+	public Attributes getLabelsAsAttributes() {
+
+		Attributes __attributes = new Attributes();
+		
+		for (Map.Entry<String, String> entry : labels.entrySet()) {
+			__attributes.put(entry.getKey(), entry.getValue());
+		} //for
+		
+		return(__attributes);
+		
+	} //getLabelsAsAttributes
+	
 } //JMX2InsightsConfig
