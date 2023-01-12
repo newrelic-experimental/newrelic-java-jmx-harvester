@@ -1,4 +1,4 @@
-package com.newrelic.gpo.jmx2insights;
+package com.newrelic.labs.jmxharvester;
 
 
 import java.io.IOException;

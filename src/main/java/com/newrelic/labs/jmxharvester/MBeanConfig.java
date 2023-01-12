@@ -1,8 +1,15 @@
 
-package com.newrelic.gpo.jmx2insights;
+package com.newrelic.labs.jmxharvester;
+
+import java.util.Iterator;
+import java.util.Vector;
 
 /* newrelic agent */
 import com.newrelic.agent.Agent;
+
+/* agent deps */
+import com.newrelic.agent.deps.org.json.simple.JSONObject;
+import com.newrelic.agent.deps.org.json.simple.JSONArray;
 
 /**
  * Represents the configuration options to be found in newrelic.yml jmx2insights configuration section.
@@ -16,11 +23,97 @@ public class MBeanConfig {
 	private String[] mbean_attributes;
 	//new implementation
 	private MBeanAttributeConfig[] mbean_attribute_configs;
+	private MBeanOperationConfig[] mbean_operation_configs;
 	//interval management
 	private int polling_interval = 1; //default
 	private int mbean_polling_counter = 1; //default
 	
+	/**
+	 * Creates a new instance of an MBean configuration based on the cloud config structure of jmx-harvester nr1 app. 
+	 * @param __mbean_document
+	 * @throws MBeanConfigException
+	 */
+	MBeanConfig(JSONObject __mbean_document) throws MBeanConfigException {
+		
+		MBeanAttributeConfig[] __mbean_attribute_configs = null;
+		MBeanOperationConfig[] __mbean_operation_configs = null;
+		Iterator<JSONObject> __array_iterator;
+		JSONObject __tmpObj = null;
+		Vector<MBeanAttributeConfig> __vAttributes = new Vector();
+		Vector<MBeanOperationConfig> __vOperations = new Vector();
+		
+		
+		try {
+			
+			mbean_name = (String)__mbean_document.get("domain") + ":type=" + (String)__mbean_document.get("name");
+			Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] MBean >>>>>  " + mbean_name); //TODO remove / make debug ... 
+			polling_interval = 1; //ugh I fucked up
+			mbean_attributes = new String[] {"cloud config"};
+			
+			JSONArray __attributes = (JSONArray)__mbean_document.get("attributes");
+			
+			if (__attributes.size() > 0) {
+				
+				
+				__array_iterator = __attributes.iterator();
+				while(__array_iterator.hasNext()) {
+					
+					__tmpObj = __array_iterator.next();
+					__vAttributes.add(new MBeanAttributeConfig(__tmpObj));
+				} //while
+				
+			} //if
+			
+			JSONArray __operations = (JSONArray)__mbean_document.get("operations");
+			
+			if (__operations.size() > 0) {
+				
+				__array_iterator = __operations.iterator();
+				while(__array_iterator.hasNext()) {
+					
+					__tmpObj = __array_iterator.next();
+					__vOperations.add(new MBeanOperationConfig(__tmpObj));
+				} //while
+			} //if
+			
+			
+			//attributes and operations processed, update the class level objects
+			if (__vAttributes.size() > 0) {
+				
+				__mbean_attribute_configs = new MBeanAttributeConfig[__vAttributes.size()];
+				for (int i = 0; i < __vAttributes.size(); i++) {
+				
+					__mbean_attribute_configs[i] = (MBeanAttributeConfig)__vAttributes.get(i);
+				} //for
+				
+				mbean_attribute_configs = __mbean_attribute_configs;
+			}//if
+			
+			if (__vOperations.size() > 0) {
+				
+				__mbean_operation_configs = new MBeanOperationConfig[__vOperations.size()];
+				
+				for (int j = 0; j < __vOperations.size(); j++) {
+					
+					__mbean_operation_configs[j] = (MBeanOperationConfig)__vOperations.get(j);
+				} //for
+				
+				mbean_operation_configs = __mbean_operation_configs;
+			} //if
+		} //try
+		catch (java.lang.Exception _e) {
+			
+			throw new MBeanConfigException("Problem creating mbean from document: " + __mbean_document.toJSONString());
+			
+		} //catch
+
+	} //MBeanConfig
 	
+	/**
+	 * Creates an MBean configuration object given the String which is the config for an individual MBean in newrelic.yml
+	 * (e.g.   mbean_0: java.lang:type=Threading [ThreadCount,PeakThreadCount,DaemonThreadCount])
+	 * @param _stMBean Sting represntation of a newrelic.yml mbean config
+	 */
 	MBeanConfig(String _stMBean) {
 		
 		/* manage the polling interval */

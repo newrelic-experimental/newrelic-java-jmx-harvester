@@ -1,4 +1,5 @@
-package com.newrelic.gpo.jmx2insights;
+package com.newrelic.labs.jmxharvester;
+
 /* java core */
 import javax.management.MBeanServer;
 import javax.management.MBeanInfo;
@@ -29,6 +30,7 @@ import com.newrelic.agent.service.AbstractService;
 import com.newrelic.agent.service.ServiceFactory;
 import com.newrelic.agent.stats.StatsEngine;
 import com.newrelic.api.agent.NewRelic;
+import com.newrelic.labs.jmxharvester.Constantz;
 import com.newrelic.agent.config.AgentConfig;
 import com.newrelic.agent.config.AgentConfigListener;
 import com.newrelic.agent.deps.com.google.common.collect.Multiset.Entry;
@@ -36,29 +38,48 @@ import com.newrelic.agent.deps.com.google.common.collect.Multiset.Entry;
 /* telemetry sdk */
 import com.newrelic.telemetry.Attributes;
 import com.newrelic.telemetry.MetricBatchSenderFactory;
-//import com.newrelic.telemetry.OkHttpPoster;
 import com.newrelic.telemetry.http.HttpPoster;
 import com.newrelic.telemetry.metrics.Gauge;
 import com.newrelic.telemetry.metrics.MetricBatchSender;
 import com.newrelic.telemetry.metrics.MetricBuffer;
 import java.util.function.Supplier;
-//import com.newrelic.jfr.daemon.OkHttpPoster;
 import com.newrelic.telemetry.SenderConfiguration.SenderConfigurationBuilder;
 import com.newrelic.telemetry.Response;
 
-/* jmx2insights */
-import com.newrelic.gpo.jmx2insights.Constantz;
+/* experimental */
+//import com.newrelic.agent.transport.apache.ApacheHttpClientWrapper;
+//import com.newrelic.agent.transport.HttpClientWrapper;
+//
+//import com.newrelic.agent.deps.org.apache.http.impl.client.CloseableHttpClient;
+//import com.newrelic.agent.deps.org.apache.http.client.methods.HttpPost;
+
+
+import com.newrelic.agent.deps.org.apache.http.client.methods.CloseableHttpResponse;
+import com.newrelic.agent.deps.org.apache.http.client.methods.HttpPost;
+import com.newrelic.agent.deps.org.apache.http.client.methods.HttpGet;
+import com.newrelic.agent.deps.org.apache.http.entity.StringEntity;
+import com.newrelic.agent.deps.org.apache.http.impl.client.CloseableHttpClient;
+import com.newrelic.agent.deps.org.apache.http.impl.client.HttpClients;
+import com.newrelic.agent.deps.org.apache.http.util.EntityUtils;
+import com.newrelic.agent.deps.org.json.simple.JSONObject;
+import com.newrelic.agent.deps.org.json.simple.JSONArray;
+import com.newrelic.agent.deps.org.json.simple.parser.JSONParser;
+
+import java.io.IOException;
 
 
 /**
- * The JMX2Insights service object
+ * The JMXHarvester service object
  *
  * @author gil@newrelic.com
  */
-public class JMX2Insights extends AbstractService implements HarvestListener {
+public class JMXHarvester extends AbstractService implements HarvestListener {
 
     private int invocationCounter = 1;
-    private JMX2InsightsConfig jmx2insightsConfig = null;
+    private int inventoryCounter = 0;
+    private int cloudConfigCounter = -9987;
+
+    private JMXHarvesterConfig jmxHarvesterConfig = null;
     private MemoryEventsThread memoryEventsThread = null; //first implementation of the memory thread.
     
     //telemetry sdk 
@@ -66,12 +87,12 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
     private Attributes globalAttributes = new Attributes();
     	
                 
-    public JMX2Insights() {
+    public JMXHarvester() {
 
-        super(JMX2Insights.class.getSimpleName());
+        super(JMXHarvester.class.getSimpleName());
         Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Initializing Service Class.");
 
-    } //JMX2Insights
+    } //JMXHarvester
 
     @Override
     public boolean isEnabled() {
@@ -84,12 +105,13 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
     public void afterHarvest(String _appName) {
 
         Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] after harvest event start.");
-        Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] after harvest event end.");
+        Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] after harvest event end.");        
     } //afterHarvest
 
     @Override
     public void beforeHarvest(String _appName, StatsEngine _statsEngine) {
 
+         
         /* measure the duration of the harvest operation for jmx data */
         long __lBeginTimestamp = System.currentTimeMillis();
 
@@ -99,38 +121,38 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
 
             Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Processing harvest event for Agent.");
 
-            if (jmx2insightsConfig != null) {
+            if (jmxHarvesterConfig != null) {
 
-                if (jmx2insightsConfig.isEnabled()) {
+                if (jmxHarvesterConfig.isEnabled()) {
 
                     Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Enabled.");
 
                     //execute interval counter should the frequency be equal to the counter
-                    if (jmx2insightsConfig.getFrequency() == invocationCounter) {
+                    if (jmxHarvesterConfig.getFrequency() == invocationCounter) {
 
                         Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Matched invocation counter ... execute ops pending ....");
-                        if (jmx2insightsConfig.getMode().equals("disco")) {
+                        if (jmxHarvesterConfig.getMode().equals("inventory")) {
 
-                            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Starting disco jmx harvest.");
-                            executeDisco();
-                            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Finished disco jmx harvest.");
+                            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Starting inventory jmx harvest.");
+                            executeInventory();
+                            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Finished inventory jmx harvest.");
 
                         } //if
-                        else if (jmx2insightsConfig.getMode().equals("strict")) {
+                        else if (jmxHarvesterConfig.getMode().equals("strict")) {
 
                             Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Starting strict jmx harvest.");
                             executeStrict();
                             Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Finished strict jmx harvest.");
 
                         } //else if
-                        else if (jmx2insightsConfig.getMode().equals("promiscuous")) {
+                        else if (jmxHarvesterConfig.getMode().equals("promiscuous")) {
 
                             Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Starting promiscuous jmx harvest.");
                             executePromiscuous();
                             Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Finished promiscuous jmx harvest.");
 
                         } //else if
-                        else if (jmx2insightsConfig.getMode().equals("open")) {
+                        else if (jmxHarvesterConfig.getMode().equals("open")) {
 
                             Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Starting open jmx harvest.");
                             executeOpen();
@@ -138,11 +160,11 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
                         } //else if
                         else {
 
-                            Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Unknown JMX2Insights configuration mode: " + jmx2insightsConfig.getMode() + " must be one of strict, open, disco, or promiscuous.");
+                            Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Unknown JMXHarvester configuration mode: " + jmxHarvesterConfig.getMode() + " must be one of strict, open, inventory, or promiscuous.");
                         } //else
 
                         //process the listed operations
-                        if (jmx2insightsConfig.operationsDefined()) {
+                        if (jmxHarvesterConfig.operationsDefined()) {
 
                             Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Starting MBean operations execution.");
                             executeOperations();
@@ -158,7 +180,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
                     } //if
                     else {
 
-                        if (invocationCounter > jmx2insightsConfig.getFrequency()) {
+                        if (invocationCounter > jmxHarvesterConfig.getFrequency()) {
 
                             Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Invocation counter was placed in an unexpected state. Resetting to 1. ");
                             invocationCounter = 1;
@@ -178,6 +200,17 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
                     Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Disabled.");
                 } //else
 
+                //evaluate the inventory run - only execute of the harvester mode is not inventory, otherwise what's the point?
+                if (inventoryCounter >= jmxHarvesterConfig.getInventoryFrequency() && !jmxHarvesterConfig.getMode().equals(Constantz.MODE_INVENTORY)) {
+                	
+                	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Starting inventory jmx harvest.");
+                	executeInventory();
+                  	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Finished inventory jmx harvest.");
+                	inventoryCounter = 0;
+                } //if
+                
+                inventoryCounter++; //incremented each 1 minute harvest
+                
             } //if
 
         } //try
@@ -196,19 +229,19 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
 
     @Override
     protected void doStart() throws Exception {
-// Extension Service is running before Harvest Service is initialized
+	// Extension Service is running before Harvest Service is initialized
     // So this code waits 60 seconds, otherwise you could get NPE
     // Added retry logic in case Harvest Service is not running after 60 seconds.
-    final JMX2Insights coquette = this;
+    final JMXHarvester coquette = this;
     final int sleepTime = 60000;
     new java.util.Timer().schedule(
       
       new java.util.TimerTask() {
         
-				@Override
+		@Override
         public void run() {
 	            
-          Agent.LOG.finer("[" + Constantz.EXTENSION_NAME + "] Sleep time: "+sleepTime);
+          Agent.LOG.finer("[" + Constantz.EXTENSION_NAME + "] Sleep time: " + sleepTime);
           int attempts = 1;
           int maxAttempts = 3;
           HarvestService hs = null;
@@ -253,18 +286,17 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
           getCoquetteConfig(null);
           //have to wait until listener is up
           //memoryEventsThread = new MemoryEventsThread(jmx2insightsConfig.memoryEventsEnabled());
-          memoryEventsThread = new MemoryEventsThread(jmx2insightsConfig, metricBatchSender, globalAttributes);
+          memoryEventsThread = new MemoryEventsThread(jmxHarvesterConfig, metricBatchSender, globalAttributes);
           Thread thMemoryEvents = new Thread(memoryEventsThread);
           thMemoryEvents.start(); 
           Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Memory events thread started.");	
          } 
       },
-          
-          sleepTime
+      	sleepTime
     );
     
     ServiceFactory.getConfigService().addIAgentConfigListener(configListener);	
-    getCoquetteConfig(null); //initialize the config iffin it hasn't
+    getCoquetteConfig(null); //initialize the config
 		
 	} //doStart
 
@@ -288,33 +320,135 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
             Map<String, Object> props = _agentConfig.getProperty(Constantz.YML_SECTION);
             Map<String, String> metadata = NewRelic.getAgent().getLinkingMetadata();
             
-            jmx2insightsConfig = new JMX2InsightsConfig(props);
-            jmx2insightsConfig.setLabels(_agentConfig.getLabelsConfig().getLabels());
-            jmx2insightsConfig.setAppName(_agentConfig.getApplicationName());
-            jmx2insightsConfig.setLicenseKey(_agentConfig.getLicenseKey());            
-            jmx2insightsConfig.setHostname(metadata.get("hostname"));
-            jmx2insightsConfig.setEntityGuid(metadata.get("entity.guid"));
-            
-            //set up the proxy deatils for the httpPoster
-            //TODO
-            
-
-            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Successfully loaded JMX2Insights Configuration");
+            jmxHarvesterConfig = new JMXHarvesterConfig(props);
+            jmxHarvesterConfig.setLabels(_agentConfig.getLabelsConfig().getLabels());
+            jmxHarvesterConfig.setAppName(_agentConfig.getApplicationName());
+            jmxHarvesterConfig.setLicenseKey(_agentConfig.getLicenseKey());            
+            jmxHarvesterConfig.setHostname(metadata.get("hostname"));
+            jmxHarvesterConfig.setEntityGuid(metadata.get("entity.guid"));
+            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Successfully loaded JMXHarvester Configuration");
             Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Configuration = " + props);
             Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] labels = " + _agentConfig.getLabelsConfig().getLabels());
         } //try
         catch (java.lang.Exception _e) {
 
-            Agent.LOG.error("[" + Constantz.EXTENSION_NAME + "] Problem loading the jmx2insights config from newrelic.yml. JMX2Insights set to enabled: false.");
+            Agent.LOG.error("[" + Constantz.EXTENSION_NAME + "] Problem loading the jmx2insights config from newrelic.yml. JMXHarvester set to enabled: false.");
             Agent.LOG.error("[" + Constantz.EXTENSION_NAME + "] Message: " + _e.getMessage());
 
             Map<String, Object> __disabledConfig = new HashMap<String, Object>();
             __disabledConfig.put("enabled", "false");
-            jmx2insightsConfig = new JMX2InsightsConfig(__disabledConfig);
+            jmxHarvesterConfig = new JMXHarvesterConfig(__disabledConfig);
         } //catch
 
         setUpMetricsSystem();
     } //getCouquetteConfig
+ 
+    /**
+     * Gets the jmx harvester config from nerdstore and sets the current config object
+     */
+    @SuppressWarnings("unchecked")
+	private void getCloudConfig() {
+    	
+    	String __result = "";
+    	HttpPost __post = null;
+    	    	
+    	Agent.LOG.info("counter: " + cloudConfigCounter);//devel
+    	Agent.LOG.info("freq config: " + jmxHarvesterConfig.getCloudConfigFrequency());//devel
+    	Agent.LOG.info("is enabled: " + jmxHarvesterConfig.isCloudConfigEnabled());//devel
+    	
+    	if ((cloudConfigCounter == -9987 || cloudConfigCounter >= jmxHarvesterConfig.getCloudConfigFrequency()) && jmxHarvesterConfig.isCloudConfigEnabled()) {
+    		cloudConfigCounter = 0;
+    		Agent.LOG.debug("[" + Constantz.EXTENSION_NAME + "] Cloud config check begin.");
+			try {
+
+				if (jmxHarvesterConfig.getCloudRegion().equalsIgnoreCase("us")) {
+					
+					Agent.LOG.debug("[" + Constantz.EXTENSION_NAME + "] Cloud region set to United States of America.");
+					__post = new HttpPost(Constantz.US_DC);
+				} //if
+				else if (jmxHarvesterConfig.getCloudRegion().equalsIgnoreCase("eu")) {
+
+					Agent.LOG.debug("[" + Constantz.EXTENSION_NAME + "] Cloud region set to European Union.");
+					__post = new HttpPost(Constantz.EU_DC);
+				} //else if
+				else {
+					
+					Agent.LOG.debug("[" + Constantz.EXTENSION_NAME + "] Unknown cloud region setting to US.");
+					__post = new HttpPost(Constantz.US_DC);
+					
+				} //else
+		   
+		    	JSONObject __json_body = new JSONObject();
+		    	JSONObject __json_response = new JSONObject();
+		    	StringBuffer __sb_json = new StringBuffer();
+		    	__sb_json.append("{ actor { entity(guid: \"");
+		    	__sb_json.append(jmxHarvesterConfig.getEntityGuid());
+		    	__sb_json.append("\") { nerdStorage { collection(collection: \"");
+		    	__sb_json.append(Constantz.NERDSTORE_COLLECTION);
+		    	__sb_json.append("\") { document } } } } }");
+		    	Agent.LOG.info("graph query? " + __sb_json.toString());//devel
+		    	__json_body.put("query", __sb_json.toString());
+				__post.addHeader("Content-Type", "application/json");
+				__post.addHeader("newrelic-package-id", jmxHarvesterConfig.getCloudConfigUUID());
+				__post.addHeader("API-Key", jmxHarvesterConfig.getCloudConfigKey());				
+	        	__post.setEntity(new StringEntity(__json_body.toString()));		    	
+	        	CloseableHttpClient httpClient = HttpClients.createDefault();
+	        	CloseableHttpResponse response = httpClient.execute(__post);
+	        	__result = EntityUtils.toString(response.getEntity());
+
+	        	//TODO log level
+				Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Cloud config response: " + response.getStatusLine().getStatusCode() + " - " + response.getStatusLine().getReasonPhrase());
+				
+	        	
+	        	if (response.getStatusLine().getStatusCode() == 200) {
+
+		        	JSONParser parser = new JSONParser();
+		        	__json_response = (JSONObject)parser.parse(__result);
+		        	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Cloud config reponse: " + __json_response.toJSONString());
+		        	
+		        	JSONArray __errors = (JSONArray)__json_response.get("errors");
+		        	
+		        	if (__errors == null) {
+		        		
+
+			        	JSONObject __data = (JSONObject)__json_response.get("data");
+			        	JSONObject __actor = (JSONObject)__data.get("actor");
+			        	JSONObject __entity = (JSONObject)__actor.get("entity");
+			        	JSONObject __nerdstorage = (JSONObject)__entity.get("nerdStorage");
+			        	JSONArray __collection = (JSONArray)__nerdstorage.get("collection");
+			        	jmxHarvesterConfig.setCloudConfig(__collection);
+			        	
+		        	} //if
+		        	else {
+		        		
+		        		Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Error getting cloud config: " + __errors.toJSONString());
+		        		Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Check the jmx_harvester settings in your newrelic.yml file.");        	
+		        	} //else
+		        	
+	        	} //if
+	        	else {
+	        		
+					Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Cloud config request failed with response status code: " + response.getStatusLine().getStatusCode() + " - " + response.getStatusLine().getReasonPhrase());
+					Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Check your jmx_harvester cloud config in the newrelic.yml");					
+	        	} //else
+	   
+			} //try
+			catch(java.lang.Exception _e) {
+				
+				Agent.LOG.error("[" + Constantz.EXTENSION_NAME + "] Problem checking cloud config.");
+				Agent.LOG.error("[" + Constantz.EXTENSION_NAME + "]" + _e.toString());
+			} //catch
+			
+    		Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Cloud config check end."); //TODO
+    	} //if
+    	else {
+    		Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Cloud config no-check."); //TODO
+    		//reset the counter to the check config, otherwise it will continue to increment. 
+    		cloudConfigCounter =  jmxHarvesterConfig.getCloudConfigFrequency() -1;
+    	} //else
+        
+    	cloudConfigCounter++;
+    } //getCloudConfig
     
     @SuppressWarnings("unchecked")
     private void setUpMetricsSystem() {
@@ -326,11 +460,11 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
     	metricBatchSender = MetricBatchSender.create(__metricConfig.build());
     	
     	//populate the global metric attributes 
-    	globalAttributes.put("jmx_harvester_mode", jmx2insightsConfig.getMode());
-    	globalAttributes.put("host", jmx2insightsConfig.getHostname());
-    	globalAttributes.put("entity.guid", jmx2insightsConfig.getEntityGuid());
-    	globalAttributes.put("appName", jmx2insightsConfig.getAppName());    	
-    	globalAttributes.putAll(jmx2insightsConfig.getLabelsAsAttributes());
+    	globalAttributes.put("jmx_harvester_mode", jmxHarvesterConfig.getMode());
+    	globalAttributes.put("host", jmxHarvesterConfig.getHostname());
+    	globalAttributes.put("entity.guid", jmxHarvesterConfig.getEntityGuid());
+    	globalAttributes.put("appName", jmxHarvesterConfig.getAppName());    	
+    	globalAttributes.putAll(jmxHarvesterConfig.getLabelsAsAttributes());
 
         
     } //setupMetricsSystem
@@ -413,18 +547,18 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
         } //while
 
 
-        Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] WARNING ::: JMX2Insights is set to promiscuous mode. This will harvest data from all available MBeans (which can be a lot of data). "
+        Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] WARNING ::: JMXHarvester is set to promiscuous mode. This will harvest data from all available MBeans (which can be a lot of data). "
                 + "Please take caution when enabling this mode for your application. The next promiscuous havest will take place in "
-                + jmx2insightsConfig.getFrequency() + " minute(s).");
+                + jmxHarvesterConfig.getFrequency() + " minute(s).");
     } //executePromiscuous
 
     private void executeStrict() {
 
         MBeanServer __mbeanServer = ManagementFactory.getPlatformMBeanServer();
-        MBeanConfig[] __mbeans = jmx2insightsConfig.getMBeans();
+        MBeanConfig[] __mbeans = jmxHarvesterConfig.getMBeans();
         ObjectName __tempMBean = null;
 
-        String __stTelemetryModel = jmx2insightsConfig.getTelemetryModel(); //this will be the telemetry model for this run regardless of config change
+        String __stTelemetryModel = jmxHarvesterConfig.getTelemetryModel(); //this will be the telemetry model for this run regardless of config change
         
         // events model elements
         Map<String, Object> __tempEventAttributes = null;
@@ -446,10 +580,9 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
 
             try {
 
-
                 if (__mbeans[i].getPollingInterval() != __mbeans[i].getMBeanPollingCounter()) {
 
-                    Agent.LOG.finer("[" + Constantz.EXTENSION_NAME + "] This MBean's polling interval is not satisfied it will be increased by one from: " + __mbeans[i].getMBeanName() + " : " + __mbeans[i].getMBeanPollingCounter());
+                    Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] This MBean's polling interval is not satisfied it will be increased by one from: " + __mbeans[i].getMBeanName() + " : " + __mbeans[i].getMBeanPollingCounter());
                     __mbeans[i].incrementMBeanPollingCounter();
 
                     continue;
@@ -457,38 +590,41 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
 
                 //determine if the candidate mbean satisfied the desired polling interval
 
-                Agent.LOG.finer("[" + Constantz.EXTENSION_NAME + "] This MBean's polling interval has been satisfied: " + __mbeans[i].getMBeanName() + " : " + __mbeans[i].getPollingInterval());
+                Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] This MBean's polling interval has been satisfied: " + __mbeans[i].getMBeanName() + " : " + __mbeans[i].getPollingInterval());
 
                 /* determine if the mbean definition is using a leading wildcard - this has to be escaped by a special
                  * character because there is an issue with yml properties in the format "*:" - which could represent a valid
                  * MBean query string value.
                  */
+                //remove Agent.LOG.info("b4 if ... ");
                 if (__mbeans[i].getMBeanName().charAt(0) == '\\') {
-
+                    //remove Agent.LOG.info("in if ... ");
                     __mbeans[i].setMBeanName(__mbeans[i].getMBeanName().substring(1));
                 } //if
 
+                //remove Agent.LOG.info("after if ... ");
+                
+                
                 __tempMBean = new ObjectName(__mbeans[i].getMBeanName());
                 __oiSet = __mbeanServer.queryMBeans(__tempMBean, null);
-
+                
                 if (__oiSet == null) {
                     Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Unable to find the bean defined by configuration: " + __mbeans[i].getMBeanName());
                     Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Bean representation as MBean Domain: " + __tempMBean.getDomain());
                     Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Bean representation as MBean Property List: " + __tempMBean.getKeyPropertyListString());
                     Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Bean representation as MBean Object String: " + __tempMBean.toString());
                     continue;
-                }
-
+                } //if
 
                 __oiIterator = __oiSet.iterator();
 
                 while (__oiIterator.hasNext()) {
-
+                	//remove Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Iterating the OI ????");
                     __oiInstance = __oiIterator.next();
                     __htOIProperties = __oiInstance.getObjectName().getKeyPropertyList();
                     
                     if (__stTelemetryModel.equals("events")) {
-
+                    	Agent.LOG.finer("[" + Constantz.EXTENSION_NAME + "] EVENTS have been selected as the telemetry model.");
                         __tempEventAttributes = new HashMap<String, Object>();
                         __tempEventAttributes.put("MBean", __oiInstance.getObjectName().getCanonicalName());
                         
@@ -500,7 +636,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
                         
                     } //if
                     else if (__stTelemetryModel.equals("metrics")) {
-                    	
+                    	Agent.LOG.finer("[" + Constantz.EXTENSION_NAME + "] METRICS have been selected as the telemetry model");
                     	__tempMetricAttributes = new Attributes();
                     	__tempMetricAttributes.put("jmx_harvester_mode", "strict");
                     	__tempMetricAttributes.put("jmx_harvester_type", "measurment");
@@ -513,14 +649,14 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
                     } //else
                     
                     
-
-
                     //might want to add an MBean Instance
                     //removed to support complex type sub members __stAttributes = __mbeans[i].getMBeanAttributes();
                     __macAttributes = __mbeans[i].getMbeanAttributeObjects();
 
                     for (int ii = 0; ii < __macAttributes.length; ii++) {
 
+                    	Agent.LOG.info("we're looping the attributes: " + __macAttributes[ii].toString());
+                    	
                     	if (__stTelemetryModel.equals("events")) {
 
                     		handleAttributeValueAsEvent(__mbeanServer.getAttribute(__oiInstance.getObjectName(), __macAttributes[ii].getAttributeName()), __macAttributes[ii], __tempEventAttributes, __tempTabularEventVector);
@@ -544,7 +680,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
                     	
                         publishInsightsEvent(__tempEventAttributes);
 
-                        //add any tabular events - this is a poop work around for tabular support and breaks the whole simplicity of this derp derp ...
+                        //TODO Rework handling for tabular events
                         if (__tempTabularEventVector.size() > 0) {
 
                             Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Adding TabularData entries for this mbean execution.");
@@ -586,11 +722,11 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
             } //try
             catch (java.lang.Exception _e) {
 
-                Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Problem loading the mbean: " + __mbeans[i].getMBeanName());
-                Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Message MBean Fail: " + _e.getMessage());
+                Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Problem loading the mbean: " + __mbeans[i].getMBeanName());
+                Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Message MBean Fail: " + _e.getMessage());
 
                 //adding additional Logging for the NULL MBEAN ISSUE:
-                Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Message MBean Fail Cause: " + _e.getCause());
+                Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Message MBean Fail Cause: " + _e.getCause());
             } //catch
         } //for
 
@@ -600,11 +736,10 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
     private void executeOpen() {
 
         MBeanServer __mbeanServer = ManagementFactory.getPlatformMBeanServer();
-        MBeanConfig[] __mbeans = jmx2insightsConfig.getMBeans();
+        MBeanConfig[] __mbeans = jmxHarvesterConfig.getMBeans();
         ObjectName __tempMBean = null;
         Map<String, Object> __tempEventAttributes = null;
         Vector<Map> __tempTabularEventVector = new Vector<Map>();
-
         Iterator<ObjectInstance> __oiIterator = null;
         Set<ObjectInstance> __oiSet = null;
         ObjectInstance __oiInstance = null;
@@ -707,7 +842,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
 
     } //executeOpen
     
-    private void executeDisco() {
+    private void executeInventory() {
 
     	//metrics 
         MetricBuffer __metricBuffer = null;
@@ -715,7 +850,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
         Set<ObjectInstance> __mbeanInstances = __mbeanServer.queryMBeans(null, null);
         Iterator<ObjectInstance> __iterator = __mbeanInstances.iterator();
         
-        Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Running Disco .... ");
+        Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Running Inventory .... ");
                     
         try {
 
@@ -727,11 +862,11 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
       
                 __metricBuffer = new MetricBuffer(globalAttributes);
                 Attributes __standardAttributes = new Attributes();
-                __standardAttributes.put("jmx_harvester_mode", "disco");
-                __standardAttributes.put("jmx_harvester_type", "inventory");
+                __standardAttributes.put("jmx_harvester_mode", "inventory");
+                __standardAttributes.put("jmx_harvester_type", "inventory"); //keeping both mode and type to support more exotic types in the future - the harvester ui depends on _type attribute
                 __standardAttributes.put("object_type", "mbean");
                 __standardAttributes.put("mbean_name", objectName.toString());
-                __standardAttributes.put("mbean_domain", objectName.getDomain());
+                __standardAttributes.put("mbean_domain", objectName.getDomain());                
             	
                 MBeanAttributeInfo[] __mbai = __info.getAttributes();
                 
@@ -745,7 +880,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
                      __attributeAttributes.put("mbean_attribute_name", __mbai[i].getName());
                      __attributeAttributes.put("jmx_harvester_frequency", 1); //TODO from mbean attribute config
                      __attributeAttributes.putAll(__standardAttributes);
-                     Gauge __gauge = new Gauge("labs.jmx.inventory." + instance.getObjectName() + "." + __mbai[i].getName(), 0d, System.currentTimeMillis(), __attributeAttributes);
+                     Gauge __gauge = new Gauge("jmx_harvester.inventory." + instance.getObjectName() + "." + __mbai[i].getName(), 0d, System.currentTimeMillis(), __attributeAttributes);
                     __metricBuffer.addMetric(__gauge);
                 } //for
 
@@ -761,7 +896,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
                 	__operationAttributes.put("mbean_operation_name", __mboi[i].getName());
                 	__operationAttributes.put("jmx_harvester_frequency", 1); //TODO from mbean operation config
                 	__operationAttributes.putAll(__standardAttributes);
-                   Gauge __operation_gauge = new Gauge("labs.jmx.inventory." + instance.getObjectName() + "." + __mboi[i].getName(), 0d, System.currentTimeMillis(), __operationAttributes);
+                   Gauge __operation_gauge = new Gauge("jmx_harvester.inventory." + instance.getObjectName() + "." + __mboi[i].getName(), 0d, System.currentTimeMillis(), __operationAttributes);
                		__metricBuffer.addMetric(__operation_gauge);
                 } //for
 
@@ -789,17 +924,17 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
 
     private void handleAttributeValueAsMetric(MetricBuffer _metricBuffer, Object _oAttributeValue, String _stMBeanName, MBeanAttributeConfig _macAttributeConfig, Attributes _attributes) {
     	
-    	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] 1>>>>>>>>> " + _metricBuffer);
-    	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] 2>>>>>>>>> " + _oAttributeValue);
-    	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] 3>>>>>>>>> " + _stMBeanName);
-    	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] 4>>>>>>>>> " + _macAttributeConfig);
-    	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] 5>>>>>>>>> " + _attributes);
+    	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] 1. _metricBuffer >>>>>>>>> " + _metricBuffer);
+    	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] 2. _oAttributeValue >>>>>>>>> " + _oAttributeValue);
+    	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] 3. _stMBeanName >>>>>>>>> " + _stMBeanName);
+    	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] 4. _macAtrributeConfig >>>>>>>>> " + _macAttributeConfig);
+    	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] 5. _attributes >>>>>>>>> " + _attributes);
     	
     	try {
     		
     		if (_oAttributeValue instanceof java.lang.Number) {
 
-    			_metricBuffer.addMetric(new Gauge(jmx2insightsConfig.getMetricPrefix() + "." + _stMBeanName + "." + _macAttributeConfig.getAttributeName(), ((Number)_oAttributeValue).doubleValue(), System.currentTimeMillis(), _attributes));
+    			_metricBuffer.addMetric(new Gauge(jmxHarvesterConfig.getMetricPrefix() + "." + _stMBeanName + "." + _macAttributeConfig.getAttributeName(), ((Number)_oAttributeValue).doubleValue(), System.currentTimeMillis(), _attributes));
               
             } //if
             else if (_oAttributeValue instanceof javax.management.openmbean.CompositeData) {
@@ -818,7 +953,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
 
             			_metricBuffer.addMetric(
         					new Gauge(
-        							jmx2insightsConfig.getMetricPrefix() + "." + _stMBeanName + "." + _macAttributeConfig.getAttributeName() + "." + __stAttributeHeaders[i], 
+        							jmxHarvesterConfig.getMetricPrefix() + "." + _stMBeanName + "." + _macAttributeConfig.getAttributeName() + "." + __stAttributeHeaders[i], 
         							handleCompositeDataObjectForMetrics(((javax.management.openmbean.CompositeData)_oAttributeValue).get(__stAttributeHeaders[i]), __stAttributeHeaders[i]), 
             					    System.currentTimeMillis(), 
             					   _attributes));
@@ -833,7 +968,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
                     	
                         _metricBuffer.addMetric(
             					new Gauge(
-            							jmx2insightsConfig.getMetricPrefix() + "." + _stMBeanName + "." + _macAttributeConfig.getAttributeName() + "." + __key, 
+            							jmxHarvesterConfig.getMetricPrefix() + "." + _stMBeanName + "." + _macAttributeConfig.getAttributeName() + "." + __key, 
             							handleCompositeDataObjectForMetrics(((javax.management.openmbean.CompositeData)_oAttributeValue).get(__key), __key), 
                 					    System.currentTimeMillis(), 
                 					   _attributes));
@@ -870,7 +1005,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
                                     //__mTabularEventHolder.put(__stAttributeHeaders[i], handleCompositeDataObject(__tempCD.get(__stAttributeHeaders[i])));
                                     _metricBuffer.addMetric(
                         					new Gauge(
-                        							jmx2insightsConfig.getMetricPrefix() + "." + _stMBeanName + "." + _macAttributeConfig.getAttributeName() + "." + __stAttributeHeaders[i], 
+                        							jmxHarvesterConfig.getMetricPrefix() + "." + _stMBeanName + "." + _macAttributeConfig.getAttributeName() + "." + __stAttributeHeaders[i], 
                         							handleCompositeDataObjectForMetrics(((javax.management.openmbean.CompositeData)_oAttributeValue).get(__stAttributeHeaders[i]), __stAttributeHeaders[i]), 
                             					    System.currentTimeMillis(), 
                             					   _attributes));
@@ -886,7 +1021,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
                                     //__mTabularEventHolder.put(__key, handleCompositeDataObject(__tempCD.get(__key)));
                                     _metricBuffer.addMetric(
                         					new Gauge(
-                        							jmx2insightsConfig.getMetricPrefix() + "." + _stMBeanName + "." + _macAttributeConfig.getAttributeName() + "." + __key, 
+                        							jmxHarvesterConfig.getMetricPrefix() + "." + _stMBeanName + "." + _macAttributeConfig.getAttributeName() + "." + __key, 
                         							handleCompositeDataObjectForMetrics(((javax.management.openmbean.CompositeData)_oAttributeValue).get(__key), __key), 
                             					    System.currentTimeMillis(), 
                             					   _attributes));                        
@@ -922,8 +1057,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
     	} //catch
     	
     } //handleAttributeValueAsMetric
-    
-    
+     
     @SuppressWarnings("unchecked")
     private void handleAttributeValueAsEvent(Object _oAttributeValue, MBeanAttributeConfig _macAttributeConfig, Map<String, Object> _mEventHolder, Vector<Map> _vTabularEvents) {
 
@@ -1083,7 +1217,6 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
         } //catch
 
     } //handleAttributeValueAsEvent
-
     
     private double handleCompositeDataObjectForMetrics(java.lang.Object _object, String _key) {
 		
@@ -1171,7 +1304,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
     private void executeOperations() {
 
         MBeanServer __mbeanServer = ManagementFactory.getPlatformMBeanServer();
-        MBeanOperationConfig[] __operations = jmx2insightsConfig.getMBeanOperationConfigs();
+        MBeanOperationConfig[] __operations = jmxHarvesterConfig.getMBeanOperationConfigs();
 
         ObjectName __tempMBean = null;
         Map<String, Object> __tempEventAttributes = null;
@@ -1184,7 +1317,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
 
             try {
 
-                __tempMBean = new ObjectName(__operations[i].getMBeanName());
+                __tempMBean = new ObjectName(__operations[i].getMBeanOperationName());
                 __oiSet = __mbeanServer.queryMBeans(__tempMBean, null);
 
                 //determine what to do with a null result
@@ -1287,7 +1420,7 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
             } //try
             catch (java.lang.Exception _e) {
 
-                Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Problem performing operations on mbean: " + __operations[i].getMBeanName());
+                Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Problem performing operations on mbean: " + __operations[i].getMBeanOperationName());
                 Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] MBean Fail Message: " + _e.getMessage());
                 Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] MBean Fail Cause: " + _e.getCause());
             } //catch
@@ -1302,12 +1435,12 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
         public void configChanged(String _appName, AgentConfig _agentConfig) {
 
             //reload the coquette configuration
-            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Reloading JMX2Insights Configuration");
+            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Reloading JMXHarvester Configuration");
             getCoquetteConfig(_agentConfig);
 
             //reload the memory thread enabled state
             if (memoryEventsThread != null){
-                memoryEventsThread.setEnabled(jmx2insightsConfig.memoryEventsEnabled());
+                memoryEventsThread.setEnabled(jmxHarvesterConfig.memoryEventsEnabled());
             }
 
         } //configChanged
@@ -1317,9 +1450,9 @@ public class JMX2Insights extends AbstractService implements HarvestListener {
 
         Map<String, Object> params = new HashMap<String, Object>();
         params.putAll(mAttribs);
-        params.putAll(jmx2insightsConfig.getLabels());
+        params.putAll(jmxHarvesterConfig.getLabels());
 
-        NewRelic.getAgent().getInsights().recordCustomEvent(jmx2insightsConfig.getEventName(), params);
+        NewRelic.getAgent().getInsights().recordCustomEvent(jmxHarvesterConfig.getEventName(), params);
 
     }
-} //JMX2Insights
+} //JMXHarvester

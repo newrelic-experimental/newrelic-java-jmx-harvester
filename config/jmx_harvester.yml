@@ -1,14 +1,24 @@
-# JMX2Insights Extension
+# JMXHarvester Extension
+# ------------------------------------------
+# Please log issues at:  https://github.com/newrelic-experimental/newrelic-java-jmx-harvester/issues
+# 
+# Options
 # ------------------------------------------
 # enabled: (true | false)
-# mode: (options - strict, open, promiscuous, disco)
+# mode: (options - strict, open, promiscuous, inventory)
 # frequency: (integer) value for harvest cycles in minutes
 # telemetry_model: (metrics | events)
 # event_name: (string) the name of the custom event in Insights
 # mbean_n: (string) the mbean name and names of the attributes required
 # metric_prefix: (string) the initial characters of the metric namespace
 # memory_events: (on | off) collects second by second memory details for jvm - generates 86400 events per day
-jmx2insights:
+# inventory_interval: interval time in minutes, default is 1440 (1 day)
+# nrcloud_config_enabled: (true | false) overrides the local agent yml config and uses the config defined by the jmx harvester app
+# nrcloud_config_frequency: (int) the number of minutes between cloud config lookups
+# nrcloud_config_uuid: (string) UUID of the jmx harvester app
+# nrcloud_config_key: (string) User API key to load the harvester config from nerdstorage
+# nrcloud_region: (us | eu) required to use the jmx explorer app 
+jmx_harvester:
   enabled: true
   mode: strict
   frequency: 1
@@ -17,9 +27,12 @@ jmx2insights:
   event_name: JMX
   metric_prefix: labs.jmx
   memory_events: off
+  inventory_frequency: 1440
   nrcloud_config_enabled: true
+  nrcloud_config_frequency: 2
   nrcloud_config_uuid: ABCD
   nrcloud_config_key: ABCD
+  nrcloud_region: us 
   mbean_0: java.lang:type=Threading [ThreadCount,PeakThreadCount,DaemonThreadCount]
   mbean_1: java.lang:type=Compilation [TotalCompilationTime]
   mbean_2: java.lang:type=Runtime [Uptime]

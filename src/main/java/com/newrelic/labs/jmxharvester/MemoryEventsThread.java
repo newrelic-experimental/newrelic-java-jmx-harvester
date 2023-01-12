@@ -1,4 +1,4 @@
-package com.newrelic.gpo.jmx2insights;
+package com.newrelic.labs.jmxharvester;
 
 import java.lang.management.ManagementFactory;
 import java.util.HashMap;
@@ -30,7 +30,7 @@ public class MemoryEventsThread implements Runnable {
 	private Set<ObjectInstance> oiGC = null;
 	private Set<ObjectInstance> oiMemoryPool = null;
 	private MBeanServer mbeanServer = ManagementFactory.getPlatformMBeanServer();
-	private JMX2InsightsConfig jmx2insightsConfig;
+	private JMXHarvesterConfig jmx2insightsConfig;
 	private MetricBatchSender metricBatchSender;
 	private Attributes globalAttributes;
     private MetricBuffer metricBuffer;
@@ -45,7 +45,7 @@ public class MemoryEventsThread implements Runnable {
 //
 //	} //MemoryEventsThread
 
-	public MemoryEventsThread(JMX2InsightsConfig _config, MetricBatchSender _mbs, Attributes _attributes) {
+	public MemoryEventsThread(JMXHarvesterConfig _config, MetricBatchSender _mbs, Attributes _attributes) {
 		
 		super();
 		enabled = _config.memoryEventsEnabled();
