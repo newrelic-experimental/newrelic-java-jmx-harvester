@@ -200,12 +200,15 @@ public class JMXHarvester extends AbstractService implements HarvestListener {
                     Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Disabled.");
                 } //else
 
-                //evaluate the inventory run - only execute of the harvester mode is not inventory, otherwise what's the point?
+                /* 
+                 * Inventory is run on a separate timer defined in the configuration. If the mode is inventory we ignore the timed invocation. 
+                 */
                 if (inventoryCounter >= jmxHarvesterConfig.getInventoryFrequency() && !jmxHarvesterConfig.getMode().equals(Constantz.MODE_INVENTORY)) {
                 	
+                	long __ctms = java.lang.System.currentTimeMillis();
                 	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Starting inventory jmx harvest.");
                 	executeInventory();
-                  	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Finished inventory jmx harvest.");
+                  	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Finished inventory jmx harvest. " + "Inventory duration: " + (java.lang.System.currentTimeMillis() - __ctms) + " (ms).");
                 	inventoryCounter = 0;
                 } //if
                 
@@ -569,7 +572,6 @@ public class JMXHarvester extends AbstractService implements HarvestListener {
         Attributes __tempMetricAttributes = null;
         Attributes __tempMetricAtrributeAttributes = null;
         
-        //String[] __stAttributes = null;
         MBeanAttributeConfig[] __macAttributes = null;
         Iterator<ObjectInstance> __oiIterator = null;
         Set<ObjectInstance> __oiSet = null;
@@ -584,11 +586,8 @@ public class JMXHarvester extends AbstractService implements HarvestListener {
 
                     Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] This MBean's polling interval is not satisfied it will be increased by one from: " + __mbeans[i].getMBeanName() + " : " + __mbeans[i].getMBeanPollingCounter());
                     __mbeans[i].incrementMBeanPollingCounter();
-
                     continue;
-                }
-
-                //determine if the candidate mbean satisfied the desired polling interval
+                } //if
 
                 Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] This MBean's polling interval has been satisfied: " + __mbeans[i].getMBeanName() + " : " + __mbeans[i].getPollingInterval());
 
@@ -609,113 +608,117 @@ public class JMXHarvester extends AbstractService implements HarvestListener {
                 __oiSet = __mbeanServer.queryMBeans(__tempMBean, null);
                 
                 if (__oiSet == null) {
+                	
                     Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Unable to find the bean defined by configuration: " + __mbeans[i].getMBeanName());
                     Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Bean representation as MBean Domain: " + __tempMBean.getDomain());
                     Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Bean representation as MBean Property List: " + __tempMBean.getKeyPropertyListString());
                     Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Bean representation as MBean Object String: " + __tempMBean.toString());
-                    continue;
                 } //if
+                else {
+                
+                    __oiIterator = __oiSet.iterator();
 
-                __oiIterator = __oiSet.iterator();
-
-                while (__oiIterator.hasNext()) {
-                	//remove Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Iterating the OI ????");
-                    __oiInstance = __oiIterator.next();
-                    __htOIProperties = __oiInstance.getObjectName().getKeyPropertyList();
-                    
-                    if (__stTelemetryModel.equals("events")) {
-                    	Agent.LOG.finer("[" + Constantz.EXTENSION_NAME + "] EVENTS have been selected as the telemetry model.");
-                        __tempEventAttributes = new HashMap<String, Object>();
-                        __tempEventAttributes.put("MBean", __oiInstance.getObjectName().getCanonicalName());
+                    while (__oiIterator.hasNext()) {
+                    	//remove Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Iterating the OI ????");
+                        __oiInstance = __oiIterator.next();
+                        __htOIProperties = __oiInstance.getObjectName().getKeyPropertyList();
                         
-                        // We need to handle the possibility mbeans don't have name or type
-                        // attributes. If we record them we can kill the HashMap with a null entry.
-                        __tempEventAttributes.put("MBeanInstanceName", (__htOIProperties.get("name") == null) ? "unknown_name" : __htOIProperties.get("name"));
-                        __tempEventAttributes.put("MBeanInstanceType", (__htOIProperties.get("type") == null) ? "unknown_type" : __htOIProperties.get("type"));
-                        
-                        
-                    } //if
-                    else if (__stTelemetryModel.equals("metrics")) {
-                    	Agent.LOG.finer("[" + Constantz.EXTENSION_NAME + "] METRICS have been selected as the telemetry model");
-                    	__tempMetricAttributes = new Attributes();
-                    	__tempMetricAttributes.put("jmx_harvester_mode", "strict");
-                    	__tempMetricAttributes.put("jmx_harvester_type", "measurment");
-                    	__tempMetricAttributes.put("mbean_name", __oiInstance.getObjectName().getCanonicalName());
-                    	
-                    } //else if
-                    else {
-                    	
-                    	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Problem processing MBeans, unknown telemetry model! Check your jmx2insights config.");
-                    } //else
-                    
-                    
-                    //might want to add an MBean Instance
-                    //removed to support complex type sub members __stAttributes = __mbeans[i].getMBeanAttributes();
-                    __macAttributes = __mbeans[i].getMbeanAttributeObjects();
-
-                    for (int ii = 0; ii < __macAttributes.length; ii++) {
-
-                    	Agent.LOG.info("we're looping the attributes: " + __macAttributes[ii].toString());
-                    	
-                    	if (__stTelemetryModel.equals("events")) {
-
-                    		handleAttributeValueAsEvent(__mbeanServer.getAttribute(__oiInstance.getObjectName(), __macAttributes[ii].getAttributeName()), __macAttributes[ii], __tempEventAttributes, __tempTabularEventVector);
-                    	} //if
-                    	else if (__stTelemetryModel.equals("metrics")) {
-                    		
-                    		__tempMetricAtrributeAttributes = new Attributes();
-                    		__tempMetricAtrributeAttributes.put("mbean_attribute_name", __macAttributes[ii].getAttributeName());
-                    		__tempMetricAtrributeAttributes.putAll(__tempMetricAttributes);
-                    		handleAttributeValueAsMetric(__metricBuffer, __mbeanServer.getAttribute(__oiInstance.getObjectName(), __macAttributes[ii].getAttributeName()), __oiInstance.getObjectName().getCanonicalName(), __macAttributes[ii], __tempMetricAtrributeAttributes);
-                    	} //else if
-                    	else {
-                    		
-                    		Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Problem processing MBeans, unknown telemetry model! Check your jmx2insights config.");
-                    	} //else
-
-                    } //for
-
-
-                    if (__stTelemetryModel.equals("events")) {
-                    	
-                        publishInsightsEvent(__tempEventAttributes);
-
-                        //TODO Rework handling for tabular events
-                        if (__tempTabularEventVector.size() > 0) {
-
-                            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Adding TabularData entries for this mbean execution.");
-
-                            for (int __itabs = 0; __itabs < __tempTabularEventVector.size(); __itabs++) {
-
-                                publishInsightsEvent(__tempTabularEventVector.get(__itabs));
-
-                            } //for
-
+                        if (__stTelemetryModel.equals("events")) {
+                        	Agent.LOG.finer("[" + Constantz.EXTENSION_NAME + "] EVENTS have been selected as the telemetry model.");
+                            __tempEventAttributes = new HashMap<String, Object>();
+                            __tempEventAttributes.put("MBean", __oiInstance.getObjectName().getCanonicalName());
+                            
+                            // We need to handle the possibility mbeans don't have name or type
+                            // attributes. If we record them we can kill the HashMap with a null entry.
+                            __tempEventAttributes.put("MBeanInstanceName", (__htOIProperties.get("name") == null) ? "unknown_name" : __htOIProperties.get("name"));
+                            __tempEventAttributes.put("MBeanInstanceType", (__htOIProperties.get("type") == null) ? "unknown_type" : __htOIProperties.get("type"));
+                            
+                            
                         } //if
+                        else if (__stTelemetryModel.equals("metrics")) {
+                        	Agent.LOG.finer("[" + Constantz.EXTENSION_NAME + "] METRICS have been selected as the telemetry model");
+                        	__tempMetricAttributes = new Attributes();
+                        	__tempMetricAttributes.put("jmx_harvester_mode", "strict");
+                        	__tempMetricAttributes.put("jmx_harvester_type", "measurment");
+                        	__tempMetricAttributes.put("mbean_name", __oiInstance.getObjectName().getCanonicalName());
+                        	
+                        } //else if
+                        else {
+                        	
+                        	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Problem processing MBeans, unknown telemetry model! Check your jmx_harvester config.");
+                        } //else
                         
-                    } //if
-                    else if (__stTelemetryModel.equals("metrics")) {
-                    	
-                		//send the metrics buffer contents ...
-				        try {
-				        	
-				        	Response __response = metricBatchSender.sendBatch(__metricBuffer.createBatch());
-				        	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] sending from strict ... " + __response.getStatusMessage());
-				        	
-				        } //try
-				        catch(java.lang.Exception _e) {
-				        	
-				        	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Problem sending this batch of metrics from strict  - " + _e.toString());
-				        } //catch
-				        
-                    } //else if
-                    else {
-                    	
-                    	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Problem processing MBeans, unknown telemetry model! Check your jmx2insights config. Nothing will be recorded.");
-                    } //else
+                        
+                        //might want to add an MBean Instance
+                        //removed to support complex type sub members __stAttributes = __mbeans[i].getMBeanAttributes();
+                        __macAttributes = __mbeans[i].getMbeanAttributeObjects();
 
-                } //while
+                        for (int ii = 0; ii < __macAttributes.length; ii++) {
+                        	
+                        	if (__stTelemetryModel.equals("events")) {
 
+                        		handleAttributeValueAsEvent(__mbeanServer.getAttribute(__oiInstance.getObjectName(), __macAttributes[ii].getAttributeName()), __macAttributes[ii], __tempEventAttributes, __tempTabularEventVector);
+                        	} //if
+                        	else if (__stTelemetryModel.equals("metrics")) {
+                        		
+                        		__tempMetricAtrributeAttributes = new Attributes();
+                        		__tempMetricAtrributeAttributes.put("mbean_attribute_name", __macAttributes[ii].getAttributeName());
+                        		__tempMetricAtrributeAttributes.putAll(__tempMetricAttributes);
+                        		handleAttributeValueAsMetric(__metricBuffer, __mbeanServer.getAttribute(__oiInstance.getObjectName(), __macAttributes[ii].getAttributeName()), __oiInstance.getObjectName().getCanonicalName(), __macAttributes[ii], __tempMetricAtrributeAttributes);
+                        	} //else if
+                        	else {
+                        		
+                        		Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Problem processing MBeans, unknown telemetry model! Check your jmx_harvester config.");
+                        	} //else
+
+                        } //for
+
+
+                        if (__stTelemetryModel.equals("events")) {
+                        	
+                            publishInsightsEvent(__tempEventAttributes);
+
+                            //TODO Rework handling for tabular events
+                            if (__tempTabularEventVector.size() > 0) {
+
+                                Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Adding TabularData entries for this mbean execution.");
+
+                                for (int __itabs = 0; __itabs < __tempTabularEventVector.size(); __itabs++) {
+
+                                    publishInsightsEvent(__tempTabularEventVector.get(__itabs));
+
+                                } //for
+
+                            } //if
+                            
+                        } //if
+                        else if (__stTelemetryModel.equals("metrics")) {
+                        	
+                        	if (__metricBuffer.size() > jmxHarvesterConfig.getMetricBatchSize()) {
+
+                        		//send the metrics buffer contents ...
+        				        try {
+        				        	
+        				        	Response __response = metricBatchSender.sendBatch(__metricBuffer.createBatch());
+        				        	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] sending from strict ... " + __response.getStatusMessage());
+        				        	__metricBuffer = new MetricBuffer(globalAttributes); //reset the metric buffer
+        				        	
+        				        } //try
+        				        catch(java.lang.Exception _e) {
+        				        	
+        				        	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Problem sending this batch of metrics from strict  - " + _e.toString());
+        				        } //catch
+                        	} //if
+                        	
+                        } //else if
+                        else {
+                        	
+                        	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Problem processing MBeans, unknown telemetry model! Check your jmx_harvester config. Nothing will be recorded.");
+                        } //else
+
+                    } //while
+                    
+                } //else 
 
                 __mbeans[i].resetMBeanPollingCounter();
 
@@ -724,22 +727,47 @@ public class JMXHarvester extends AbstractService implements HarvestListener {
 
                 Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Problem loading the mbean: " + __mbeans[i].getMBeanName());
                 Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Message MBean Fail: " + _e.getMessage());
-
                 //adding additional Logging for the NULL MBEAN ISSUE:
                 Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Message MBean Fail Cause: " + _e.getCause());
             } //catch
         } //for
+        
+        // send the remaining values in the buffer
+        if (__metricBuffer.size() > 0) {
+        	
+        	//send the metrics buffer contents ...
+	        try {
+	        	
+	        	Response __response = metricBatchSender.sendBatch(__metricBuffer.createBatch());
+	        	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] FINAL sending from strict ... " + __response.getStatusMessage());
+	        	__metricBuffer = null; //reset the metric buffer
+	        	
+	        } //try
+	        catch(java.lang.Exception _e) {
+	        	
+	        	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Problem sending this FINAL metrics batch of metrics from strict  - " + _e.toString());
+	        } //catch
+        } //if
 
     } //executeStrict
-
 
     private void executeOpen() {
 
         MBeanServer __mbeanServer = ManagementFactory.getPlatformMBeanServer();
         MBeanConfig[] __mbeans = jmxHarvesterConfig.getMBeans();
         ObjectName __tempMBean = null;
+        
+        String __stTelemetryModel = jmxHarvesterConfig.getTelemetryModel(); //this will be the telemetry model for this run regardless of config change
+        
+        // events model objects 
         Map<String, Object> __tempEventAttributes = null;
         Vector<Map> __tempTabularEventVector = new Vector<Map>();
+        
+        // metrics model objects
+        MetricBuffer __metricBuffer = new MetricBuffer(globalAttributes);
+        Attributes __tempMetricAttributes = null;
+        Attributes __tempMetricAtrributeAttributes = null;
+        
         Iterator<ObjectInstance> __oiIterator = null;
         Set<ObjectInstance> __oiSet = null;
         ObjectInstance __oiInstance = null;
@@ -768,63 +796,134 @@ public class JMXHarvester extends AbstractService implements HarvestListener {
 
                     __tempMBean = new ObjectName(__mbeans[i].getMBeanName());
                     __oiSet = __mbeanServer.queryMBeans(__tempMBean, null);
-                    __oiIterator = __oiSet.iterator();
+                    
+                    if (__oiSet == null) {
+                    	
+                        Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Unable to find the bean defined by configuration: " + __mbeans[i].getMBeanName());
+                        Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Bean representation as MBean Domain: " + __tempMBean.getDomain());
+                        Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Bean representation as MBean Property List: " + __tempMBean.getKeyPropertyListString());
+                        Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Bean representation as MBean Object String: " + __tempMBean.toString());
+                    } //if
+                    else {
+                        __oiIterator = __oiSet.iterator();
 
-                    while (__oiIterator.hasNext()) {
+                        while (__oiIterator.hasNext()) {
 
-                        __oiInstance = __oiIterator.next();
-                        __tempEventAttributes = new HashMap<String, Object>();
-                        __tempEventAttributes.put("MBean", __oiInstance.getObjectName().getCanonicalName());
+                            __oiInstance = __oiIterator.next();
+                            __htOIProperties = __oiInstance.getObjectName().getKeyPropertyList();
 
-                        __htOIProperties = __oiInstance.getObjectName().getKeyPropertyList();
+                            if (__stTelemetryModel.equals("events")) {
+                            	Agent.LOG.finer("[" + Constantz.EXTENSION_NAME + "] EVENTS have been selected as the telemetry model.");
+                                __tempEventAttributes = new HashMap<String, Object>();
+                                __tempEventAttributes.put("MBean", __oiInstance.getObjectName().getCanonicalName());
 
-                        // We need to handle the possiblity mbeans don't have name or type
-                        // attributes. If we record them we can kill the HashMap with a null entry.
-                        __tempEventAttributes.put("MBeanInstanceName", (__htOIProperties.get("name") == null) ? "unknown_name" : __htOIProperties.get("name"));
-                        __tempEventAttributes.put("MBeanInstanceType", (__htOIProperties.get("type") == null) ? "unknown_type" : __htOIProperties.get("type"));
+                                // We need to handle the possibility mbeans don't have name or type
+                                // attributes. If we record them we can kill the HashMap with a null entry.
+                                __tempEventAttributes.put("MBeanInstanceName", (__htOIProperties.get("name") == null) ? "unknown_name" : __htOIProperties.get("name"));
+                                __tempEventAttributes.put("MBeanInstanceType", (__htOIProperties.get("type") == null) ? "unknown_type" : __htOIProperties.get("type"));
+                                
+                            } //if
+                            else if (__stTelemetryModel.equals("metrics")) {
+                            	
+                            	Agent.LOG.finer("[" + Constantz.EXTENSION_NAME + "] METRICS have been selected as the telemetry model");
+                            	__tempMetricAttributes = new Attributes();
+                            	__tempMetricAttributes.put("jmx_harvester_mode", "opem");
+                            	__tempMetricAttributes.put("jmx_harvester_type", "measurment");
+                            	__tempMetricAttributes.put("mbean_name", __oiInstance.getObjectName().getCanonicalName());
+                            } //else if
+                            else {
+                            	
+                            	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Problem processing MBeans, unknown telemetry model! Check your jmx_harvester config.");
+                            } //else
+                            
+                            
 
-                        try {
+                            try {
 
-                            __mbiTempInfo = __mbeanServer.getMBeanInfo(__oiInstance.getObjectName());
-                            __mbaiAttributes = __mbiTempInfo.getAttributes();
+                                __mbiTempInfo = __mbeanServer.getMBeanInfo(__oiInstance.getObjectName());
+                                __mbaiAttributes = __mbiTempInfo.getAttributes();
 
-                            //report all the attributes for this mbean
-                            for (int ii = 0; ii < __mbaiAttributes.length; ii++) {
+                                //report all the attributes for this mbean
+                                for (int ii = 0; ii < __mbaiAttributes.length; ii++) {
 
-                                if (__mbaiAttributes[ii].isReadable()) {
+                                    if (__mbaiAttributes[ii].isReadable()) {
 
-                                	handleAttributeValueAsEvent(__mbeanServer.getAttribute(__oiInstance.getObjectName(), __mbaiAttributes[ii].getName()), new MBeanAttributeConfig(__mbaiAttributes[ii].getName()), __tempEventAttributes, __tempTabularEventVector);
+                                    	if (__stTelemetryModel.equals("events")) {
+                                        	handleAttributeValueAsEvent(__mbeanServer.getAttribute(__oiInstance.getObjectName(), __mbaiAttributes[ii].getName()), new MBeanAttributeConfig(__mbaiAttributes[ii].getName()), __tempEventAttributes, __tempTabularEventVector);                                    		
+                                    	} //if
+                                    	else if (__stTelemetryModel.equals("metrics")) {
+                                    		
+                                    		__tempMetricAtrributeAttributes = new Attributes();
+                                    		__tempMetricAtrributeAttributes.put("mbean_attribute_name", __mbaiAttributes[ii].getName());
+                                    		__tempMetricAtrributeAttributes.putAll(__tempMetricAttributes);
+                                    		handleAttributeValueAsMetric(__metricBuffer, __mbeanServer.getAttribute(__oiInstance.getObjectName(), __mbaiAttributes[ii].getName()), __oiInstance.getObjectName().getCanonicalName(), new MBeanAttributeConfig(__mbaiAttributes[ii].getName()), __tempMetricAtrributeAttributes);
+                                    	} //else if
+                                    	else {
+                                    		Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Problem processing MBeans, unknown telemetry model! Check your jmx2insights config.");
+                                    	}
+
+
+                                    } //if
+                                    else {
+
+                                        Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Attribute " + __mbaiAttributes[ii].getName() + " is not readable. ");
+                                    } //else
+
+                                } //for
+
+                            } //try
+                            catch (java.lang.Exception _e) {
+
+                                Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Problem interrogating mbean: " + __oiInstance.getObjectName().toString() + " during open harvest.");
+                                Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Message MBean Access Fail: " + _e.getMessage());
+                            } //catch
+
+
+                            if (__stTelemetryModel.equals("events")) {
+                            	
+                                publishInsightsEvent(__tempEventAttributes);
+
+                                //add any tabular events - this is a poop work around for tabular support and breaks the whole simplicty of this derp derp ...
+                                if (__tempTabularEventVector.size() > 0) {
+
+                                    Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Adding TabularData entries for this mbean execution.");
+
+                                    for (int __itabs = 0; __itabs < __tempTabularEventVector.size(); __itabs++) {
+
+                                        publishInsightsEvent(__tempTabularEventVector.get(__itabs));
+                                    } //for
 
                                 } //if
-                                else {
+                                
+                            } //if
+                            else if (__stTelemetryModel.equals("metrics")) {
+                            	
+                            	if (__metricBuffer.size() > jmxHarvesterConfig.getMetricBatchSize()) {
 
-                                    Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Attribute " + __mbaiAttributes[ii].getName() + " is not readable. ");
-                                } //else
+                            		//send the metrics buffer contents ...
+            				        try {
+            				        	
+            				        	Response __response = metricBatchSender.sendBatch(__metricBuffer.createBatch());
+            				        	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] sending from open ... " + __response.getStatusMessage());
+            				        	__metricBuffer = new MetricBuffer(globalAttributes); //reset the metric buffer
+            				        	
+            				        } //try
+            				        catch(java.lang.Exception _e) {
+            				        	
+            				        	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Problem sending this batch of metrics from open  - " + _e.toString());
+            				        } //catch
+                            	} //if
+                            	
+                            } //else if
+                            else {
+                            	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Problem processing MBeans, unknown telemetry model! Check your jmx_harvester config. Nothing will be recorded.");
+                            	
+                            } //else
 
-                            } //for
+                        } //while
+                                                
+                    } //else
 
-                        } //try
-                        catch (java.lang.Exception _e) {
-
-                            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Problem interrogating mbean: " + __oiInstance.getObjectName().toString() + " during open harvest.");
-                            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Message MBean Access Fail: " + _e.getMessage());
-                        } //catch
-
-
-                        publishInsightsEvent(__tempEventAttributes);
-
-                        //add any tabular events - this is a poop work around for tabular support and breaks the whole simplicty of this derp derp ...
-                        if (__tempTabularEventVector.size() > 0) {
-
-                            Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Adding TabularData entries for this mbean execution.");
-
-                            for (int __itabs = 0; __itabs < __tempTabularEventVector.size(); __itabs++) {
-
-                                publishInsightsEvent(__tempTabularEventVector.get(__itabs));
-                            } //for
-
-                        } //if
-                    } //while
                 } //if
                 else {
 
@@ -840,8 +939,29 @@ public class JMXHarvester extends AbstractService implements HarvestListener {
             } //catch
         } //for
 
+        if (__metricBuffer.size() > 0) {
+        	
+        	//send the metrics buffer contents ...
+	        try {
+	        	
+	        	Response __response = metricBatchSender.sendBatch(__metricBuffer.createBatch());
+	        	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] FINAL sending from open ... " + __response.getStatusMessage());
+	        	__metricBuffer = null; //reset the metric buffer
+	        	
+	        } //try
+	        catch(java.lang.Exception _e) {
+	        	
+	        	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Problem sending this FINAL metrics batch of metrics from open  - " + _e.toString());
+	        } //catch
+        } //if
+        
     } //executeOpen
-    
+
+    /**
+     * Polls all MBean attributes and operations and persists them to New Relic as metrics. Metrics are used because
+     * there can be many values we're trying to persist and persisting them as events can easily overwhelm the event 
+     * system within the Java agent. 
+     */
     private void executeInventory() {
 
     	//metrics 
@@ -854,13 +974,15 @@ public class JMXHarvester extends AbstractService implements HarvestListener {
                     
         try {
 
+        	__metricBuffer = new MetricBuffer(globalAttributes);
+        	
             while (__iterator.hasNext()) {
             	                
                 ObjectInstance instance = __iterator.next();
                 ObjectName objectName = instance.getObjectName();
                 MBeanInfo __info = __mbeanServer.getMBeanInfo(objectName);
       
-                __metricBuffer = new MetricBuffer(globalAttributes);
+                // going to reuse the metric buffer and reallocate when it is cleared __metricBuffer = new MetricBuffer(globalAttributes);
                 Attributes __standardAttributes = new Attributes();
                 __standardAttributes.put("jmx_harvester_mode", "inventory");
                 __standardAttributes.put("jmx_harvester_type", "inventory"); //keeping both mode and type to support more exotic types in the future - the harvester ui depends on _type attribute
@@ -878,7 +1000,7 @@ public class JMXHarvester extends AbstractService implements HarvestListener {
                      __attributeAttributes.put("mbean_attribute_description", __mbai[i].getDescription());
                      __attributeAttributes.put("mbean_attribute_readable", __mbai[i].isReadable());
                      __attributeAttributes.put("mbean_attribute_name", __mbai[i].getName());
-                     __attributeAttributes.put("jmx_harvester_frequency", 1); //TODO from mbean attribute config
+                     __attributeAttributes.put("jmx_harvester_frequency", jmxHarvesterConfig.getFrequency());
                      __attributeAttributes.putAll(__standardAttributes);
                      Gauge __gauge = new Gauge("jmx_harvester.inventory." + instance.getObjectName() + "." + __mbai[i].getName(), 0d, System.currentTimeMillis(), __attributeAttributes);
                     __metricBuffer.addMetric(__gauge);
@@ -894,24 +1016,42 @@ public class JMXHarvester extends AbstractService implements HarvestListener {
                 	__operationAttributes.put("mbean_operation_return_type", __mboi[i].getReturnType());
                 	__operationAttributes.put("mbean_operation_description", __mboi[i].getDescription());
                 	__operationAttributes.put("mbean_operation_name", __mboi[i].getName());
-                	__operationAttributes.put("jmx_harvester_frequency", 1); //TODO from mbean operation config
+                	__operationAttributes.put("jmx_harvester_frequency", jmxHarvesterConfig.getFrequency());
                 	__operationAttributes.putAll(__standardAttributes);
                    Gauge __operation_gauge = new Gauge("jmx_harvester.inventory." + instance.getObjectName() + "." + __mboi[i].getName(), 0d, System.currentTimeMillis(), __operationAttributes);
                		__metricBuffer.addMetric(__operation_gauge);
                 } //for
 
+                if (__metricBuffer.size() > jmxHarvesterConfig.getMetricBatchSize()) {
+                    try {
+                    	
+                    	Response __response = metricBatchSender.sendBatch(__metricBuffer.createBatch());
+                    	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] metricBatchSend Status Message >>>> " + __response.getStatusMessage());
+                    	__metricBuffer = new MetricBuffer(globalAttributes);
+                    } //try
+                    catch(java.lang.Exception _e) {
+                    	
+                    	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] metricBatchSendr blew right up. " + _e.toString());
+                    } //catch                	
+                } //if
                 
-                try {
-                	
-                	Response __response = metricBatchSender.sendBatch(__metricBuffer.createBatch());
-                	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] metricBatchSend Status Message >>>> " + __response.getStatusMessage());
-                } //try
-                catch(java.lang.Exception _e) {
-                	
-                	Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] metricBatchSendr blew right up. " + _e.toString());
-                } //catch
-
             } //while
+            
+            // send remaining batch of metrics ... 
+            if (__metricBuffer.size() > 0) {
+            	
+	    	   try {
+	           	
+	    		   Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] Sending " + __metricBuffer.size() + " metrics to New Relic.");
+		           Response __response = metricBatchSender.sendBatch(__metricBuffer.createBatch());
+		           Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] FINAL metricBatchSend Status Message >>>> " + __response.getStatusMessage());
+		           	__metricBuffer = null;
+	           } //try
+	           catch(java.lang.Exception _e) {
+	           	
+	        	   Agent.LOG.info("[" + Constantz.EXTENSION_NAME + "] FINAL metricBatchSendr blew right up. " + _e.toString());
+	           } //catch
+            } //if
 
         } //try
         catch (java.lang.Exception _e) {
@@ -920,7 +1060,8 @@ public class JMXHarvester extends AbstractService implements HarvestListener {
             Agent.LOG.fine("[" + Constantz.EXTENSION_NAME + "] Message: " + _e.getMessage());
         } //catch
 
-    } //executeDisco
+    } //executeInventory
+
 
     private void handleAttributeValueAsMetric(MetricBuffer _metricBuffer, Object _oAttributeValue, String _stMBeanName, MBeanAttributeConfig _macAttributeConfig, Attributes _attributes) {
     	
@@ -937,6 +1078,20 @@ public class JMXHarvester extends AbstractService implements HarvestListener {
     			_metricBuffer.addMetric(new Gauge(jmxHarvesterConfig.getMetricPrefix() + "." + _stMBeanName + "." + _macAttributeConfig.getAttributeName(), ((Number)_oAttributeValue).doubleValue(), System.currentTimeMillis(), _attributes));
               
             } //if
+            else if (_oAttributeValue instanceof java.lang.String || _oAttributeValue instanceof java.lang.Boolean) {
+
+            	_attributes.put("raw_value", _oAttributeValue.toString());
+    			_metricBuffer.addMetric(new Gauge(jmxHarvesterConfig.getMetricPrefix() + "." + _stMBeanName + "." + _macAttributeConfig.getAttributeName(), 0d, System.currentTimeMillis(), _attributes));
+    			
+            } //else if
+            else if (_oAttributeValue instanceof java.util.Date) {
+
+                java.util.Date __dateAttribute = (java.util.Date) _oAttributeValue;
+                java.util.Calendar __calendarHelper = (java.util.Calendar.getInstance());
+                __calendarHelper.setTime(__dateAttribute);
+                _attributes.put("raw_value", new Long(__calendarHelper.getTimeInMillis()));
+    			_metricBuffer.addMetric(new Gauge(jmxHarvesterConfig.getMetricPrefix() + "." + _stMBeanName + "." + _macAttributeConfig.getAttributeName(), 0d, System.currentTimeMillis(), _attributes));
+            } //else if 
             else if (_oAttributeValue instanceof javax.management.openmbean.CompositeData) {
 
                 //for this iteration we will just grab all the elements from the composite object

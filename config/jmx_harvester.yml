@@ -8,14 +8,15 @@
 # mode: (options - strict, open, promiscuous, inventory)
 # frequency: (integer) value for harvest cycles in minutes
 # telemetry_model: (metrics | events)
-# event_name: (string) the name of the custom event in Insights
+# event_name: (string) the name of the custom event in Insights 
 # mbean_n: (string) the mbean name and names of the attributes required
 # metric_prefix: (string) the initial characters of the metric namespace
+# metric_batch_size: (integer) the maximum size of metrics batches
 # memory_events: (on | off) collects second by second memory details for jvm - generates 86400 events per day
 # inventory_interval: interval time in minutes, default is 1440 (1 day)
 # nrcloud_config_enabled: (true | false) overrides the local agent yml config and uses the config defined by the jmx harvester app
 # nrcloud_config_frequency: (int) the number of minutes between cloud config lookups
-# nrcloud_config_uuid: (string) UUID of the jmx harvester app
+# nrcloud_config_uuid: (string) UUID of the jmx explorer app
 # nrcloud_config_key: (string) User API key to load the harvester config from nerdstorage
 # nrcloud_region: (us | eu) required to use the jmx explorer app 
 jmx_harvester:
@@ -25,7 +26,8 @@ jmx_harvester:
   telemetry_model: metrics
   beta_features: off
   event_name: JMX
-  metric_prefix: labs.jmx
+  metric_prefix: jmx_harvester.measure
+  metric_batch_size: 200
   memory_events: off
   inventory_frequency: 1440
   nrcloud_config_enabled: true
@@ -41,3 +43,4 @@ jmx_harvester:
   mbean_5: java.lang:type=GarbageCollector,name=MarkSweepCompact [CollectionCount,CollectionTime]
   mbean_6: java.lang:name=CMS Perm Gen,type=MemoryPool [CollectionUsage,CollectionUsageThreshold,CollectionUsageThresholdCount]
   mbean_7: org.apache.jackrabbit.oak:type=RepositoryStats,name=Oak Repository Statistics [ObservationQueueMaxLength(tab_data_thingy|ANOTHER),attribute2(tab1|tab3),RegularAttrib]5
+  mbean_8: java.lang:type=GarbageCollector,name=Copy [Name]

@@ -43,12 +43,14 @@ public class JMXHarvesterConfig extends BaseConfig {
     public static final String DEFAULT_TELEMETRY_MODEL = "metrics";
     public static final String METRIC_PREFIX = "metric_prefix";
     public static final String DEFAULT_METRIC_PREFIX = "labs.jmx";
+    public static final String METRIC_BATCH_SIZE = "metric_batch_size";
+    public static final int DEFAULT_METRIC_BATCH_SIZE = 200;
     public static final String INVENTORY_FREQUENCY = "inventory_frequency";
     public static final int DEFAULT_INVENTORY_FREQUENCY = 1440; 
     public static final String NRCLOUD_CONFIG_ENABLED = "nrcloud_config_enabled";
     public static final Boolean DEFAULT_NRCLOUD_CONFIG_ENABLED = Boolean.FALSE;
     public static final String NRCLOUD_CONFIG_UUID = "nrcloud_config_uuid";
-    public static final String NRCLOUD_CONFIG_KEY= "nrcloud_config_key"; //TODO Can this be the agent license key? Pls check.
+    public static final String NRCLOUD_CONFIG_KEY= "nrcloud_config_key";
     public static final String NRCLOUD_CONFIG_FREQUENCY = "nrcloud_config_frequency";
     public static final int DEFAULT_NRCLOUD_CONFIG_FREQUENCY = 60;
     public static final String NRCLOUD_REGION = "nrcloud_region";
@@ -68,6 +70,7 @@ public class JMXHarvesterConfig extends BaseConfig {
     private String hostname = "unknown";
     private String entityGuid = "unknown";
     private String metric_prefix = "labs.jmx";
+    private int metric_batch_size = 200;
     private String telemetry_model = "metrics";
     private int inventory_frequency = 1440;
     private boolean nrcloud_config_enabled = false;
@@ -91,6 +94,7 @@ public class JMXHarvesterConfig extends BaseConfig {
 			memory_events = getProperty(MEMORY_EVENTS, DEFAULT_MEMORY_EVENTS);
 			beta_features = getProperty(BETA_FEATURES, DEFAULT_BETA_FEATURES);
 			metric_prefix = getProperty(METRIC_PREFIX, DEFAULT_METRIC_PREFIX);
+			metric_batch_size = getProperty(METRIC_BATCH_SIZE, DEFAULT_METRIC_BATCH_SIZE);
 			telemetry_model = getProperty(TELEMETRY_MODEL, DEFAULT_TELEMETRY_MODEL);
 			inventory_frequency = (getProperty(INVENTORY_FREQUENCY, DEFAULT_INVENTORY_FREQUENCY)).intValue();
 			nrcloud_config_enabled = getProperty(NRCLOUD_CONFIG_ENABLED, DEFAULT_NRCLOUD_CONFIG_ENABLED);
@@ -156,6 +160,11 @@ public class JMXHarvesterConfig extends BaseConfig {
 		
 		return(metric_prefix);
 	} //getMetricPrefix
+	
+	public int getMetricBatchSize() {
+		
+		return(metric_batch_size);
+	} //getMetricBatchSize 
 	
     public boolean isEnabled() {
 	    	
