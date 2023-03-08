@@ -55,7 +55,7 @@ public class JMXHarvesterConfig extends BaseConfig {
     public static final int DEFAULT_NRCLOUD_CONFIG_FREQUENCY = 60;
     public static final String NRCLOUD_REGION = "nrcloud_region";
     public static final String DEFAULT_NRCLOUD_REGION = "us";
-
+    
     //defaults
     private boolean isEnabled = false;
     private int frequency = 1;
@@ -80,7 +80,8 @@ public class JMXHarvesterConfig extends BaseConfig {
     private String nrcloud_region = "us";
 
     private Map<String,String> labels;
-
+    private Attributes globalAttributes = new Attributes();
+    
 	public JMXHarvesterConfig(Map<String, Object> _props) {
 		
 		super(_props, PROPERTY_ROOT);
@@ -103,12 +104,12 @@ public class JMXHarvesterConfig extends BaseConfig {
 			nrcloud_config_frequency = getProperty(NRCLOUD_CONFIG_FREQUENCY, DEFAULT_NRCLOUD_CONFIG_FREQUENCY);
 			nrcloud_region = getProperty(NRCLOUD_REGION, DEFAULT_NRCLOUD_REGION);
 	        Vector<MBeanConfig> __vTEMP = new Vector<MBeanConfig>();
-	        
+	     
 	        //collect all mbean operations definitions too and stash them as an array too
 	        Vector<MBeanOperationConfig> __vOPER_TEMP = new Vector<MBeanOperationConfig>();
 	        
 	        for (Map.Entry<String, Object> entry : _props.entrySet()) {
-	            
+	        	
 	        		if (entry.getKey().contains("mbean_")) {
 	        		
 	        			__vTEMP.add(new MBeanConfig((entry.getValue()).toString()));
@@ -134,11 +135,15 @@ public class JMXHarvesterConfig extends BaseConfig {
 	        	mbean_operations[i] = (MBeanOperationConfig)__vOPER_TEMP.get(i);
 	        } //for
 			
+	        //TODO Removed due to second step to configure labels as metric attributes (version 4.2+)
+	        //initialize the global attributes with labels  
+	        //globalAttributes.putAll(this.getLabelsAsAttributes());
 		} //try
 		catch(java.lang.Exception _e) {
 			
 			Agent.LOG.error(Constantz.EXTENSION_LOG_STRING + " Problem loading the JMXHarvester configuration. All features disabled.");
 			Agent.LOG.error(Constantz.EXTENSION_LOG_STRING + " Message: " + _e.getMessage());
+			
 			isEnabled = false;
 			mode = "strict";
 			frequency = 1;
@@ -248,11 +253,14 @@ public class JMXHarvesterConfig extends BaseConfig {
 
     public Map<String, String> getLabels() {
         return labels;
-    }
+    } //getLabels
 
     public void setLabels(Map<String, String> labels) {
-        this.labels = labels;
-    }
+        
+    	this.labels = labels;
+    	//initialize the global attributes with labels
+        globalAttributes.putAll(this.getLabelsAsAttributes());
+    } //setLabels
 
     public String getAppName() {
     	
@@ -299,12 +307,18 @@ public class JMXHarvesterConfig extends BaseConfig {
 	} //setEntityGuid
 
 	public Attributes getLabelsAsAttributes() {
-
+		
 		Attributes __attributes = new Attributes();
 		
-		for (Map.Entry<String, String> entry : labels.entrySet()) {
-			__attributes.put(entry.getKey(), entry.getValue());
-		} //for
+		if (labels != null) {
+			
+			for (Map.Entry<String, String> entry : labels.entrySet()) {
+				__attributes.put(entry.getKey(), entry.getValue());
+			} //for			
+		} //if
+		else {
+			Agent.LOG.fine(Constantz.EXTENSION_LOG_STRING + " No labels defined, none will be added to attributes.");
+		} //else
 		
 		return(__attributes);
 		
@@ -435,5 +449,18 @@ public class JMXHarvesterConfig extends BaseConfig {
 		Agent.LOG.info(Constantz.EXTENSION_LOG_STRING + " Cloud config should now be changed. ");
 		
 	} //setCloudConfig
+	
+	public void addGlobalAttribute(String _key, String _attribute) {
+		
+		globalAttributes.put(_key, _attribute);
+	} //addGlobalAttribute
+	
+	//TODO add remove attribute method?
+	
+	public Attributes getGlobalAttributes() {
+		
+		return(globalAttributes);
+	} //getGlobalAttributes
+	
 	
 } //JMXHarvesterConfig

@@ -18,6 +18,7 @@ public class Constantz {
 	public static final String MODE_PROMISCUOUS = "promiscuous";
 	public static final String MODE_INVENTORY = "inventory";
 	public static final String NERDSTORE_COLLECTION = "jmx-harvester";
+	public static final String INVENTORY_METRIC_PREFIX = "jmx_harvester.inventory";
 	public static final String MBEAN_DOC_TYPE = "mbean";
 	public static final String AGENT_CONFIG_DOC_TYPE = "agent_config";	
 	public static final String EU_DC = "https://api.eu.newrelic.com/graphql";

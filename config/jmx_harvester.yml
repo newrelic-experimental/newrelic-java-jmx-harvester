@@ -30,8 +30,8 @@ jmx_harvester:
   metric_batch_size: 200
   memory_events: off
   inventory_frequency: 1440
-  nrcloud_config_enabled: true
-  nrcloud_config_frequency: 2
+  nrcloud_config_enabled: false
+  nrcloud_config_frequency: 60
   nrcloud_config_uuid: ABCD
   nrcloud_config_key: ABCD
   nrcloud_region: us 

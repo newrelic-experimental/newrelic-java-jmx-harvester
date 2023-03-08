@@ -16,7 +16,7 @@ public class MBeanAttributeConfig {
 	 * 
 	 * @param _jsoMBeanAttribute
 	 */
-	MBeanAttributeConfig(JSONObject _jsoMBeanAttribute) { 
+	public MBeanAttributeConfig(JSONObject _jsoMBeanAttribute) { 
 		
 		try {
 			
@@ -46,7 +46,7 @@ public class MBeanAttributeConfig {
 	 * 
 	 * @param _stMBeanAttribute
 	 */
-	MBeanAttributeConfig(String _stMBeanAttribute) {
+	public MBeanAttributeConfig(String _stMBeanAttribute) {
 
 		mbean_config_raw = _stMBeanAttribute;
 		/* manage the attribute name */
