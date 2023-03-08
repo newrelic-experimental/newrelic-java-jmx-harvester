@@ -1,15 +1,54 @@
-package com.newrelic.gpo.jmx2insights;
+package com.newrelic.labs.jmxharvester;
 
 import com.newrelic.agent.Agent;
 
+/* agent deps */
+import com.newrelic.agent.deps.org.json.simple.JSONObject;
+
 public class MBeanAttributeConfig {
 
+	private String mbean_config_raw;
 	private String mbean_attribute_name;
 	private String[] mbean_attribute_element_headers;
 	private boolean b_hasAttributeElements;
 	
-	MBeanAttributeConfig(String _stMBeanAttribute) {
+	/**
+	 * 
+	 * @param _jsoMBeanAttribute
+	 */
+	public MBeanAttributeConfig(JSONObject _jsoMBeanAttribute) { 
+		
+		try {
+			
+			mbean_attribute_name = (String)_jsoMBeanAttribute.get("name");
+			
+			//TODO This needs to be able to handle composite and tabular mbean types - the current
+			// inventory system does not allow for this need to make appropriate mods to support. 
+			b_hasAttributeElements = false;
+			mbean_attribute_element_headers = null;
+			
+			
+			if (!b_hasAttributeElements) {
+				
+				Agent.LOG.finer("[" + Constantz.EXTENSION_NAME + "] No attribute element headers detected for the candidate mbean attribute : " + mbean_attribute_name);
+			} //if
+			
+		} //try
+		catch(java.lang.Exception _e) {
+			
+			Agent.LOG.error("[" + Constantz.EXTENSION_NAME + "] Problem getting mbean attribute via cloud config: " + _jsoMBeanAttribute.toJSONString()); 
+			
+		} //catch
+		
+	} //MBeanAttributeConfig
+	
+	/**
+	 * 
+	 * @param _stMBeanAttribute
+	 */
+	public MBeanAttributeConfig(String _stMBeanAttribute) {
 
+		mbean_config_raw = _stMBeanAttribute;
 		/* manage the attribute name */
 		try {
 			
@@ -38,7 +77,7 @@ public class MBeanAttributeConfig {
 			if (b_hasAttributeElements) {
 				
 				mbean_attribute_element_headers = (_stMBeanAttribute.substring(_stMBeanAttribute.indexOf('(') + 1, _stMBeanAttribute.lastIndexOf(')'))).split("[|]");
-				Agent.LOG.finer("JMX2Insights number of mbean header elements " + mbean_attribute_element_headers.length);
+				Agent.LOG.finer("JMXHarvester number of mbean header elements " + mbean_attribute_element_headers.length);
 			} //if
 			else {
 				
@@ -56,6 +95,11 @@ public class MBeanAttributeConfig {
 		
 	} //MBeanAttributeConfig
 	
+	/**
+	 * 
+	 * @param _stCandidateElement
+	 * @return boolean 
+	 */
 	public boolean hasAttributeElement(String _stCandidateElement) {
 		
 		// do we have the given string as part of this attribute config?
@@ -72,7 +116,7 @@ public class MBeanAttributeConfig {
 			
 			for (int i=0; i < mbean_attribute_element_headers.length;i++) {
 				
-				//Agent.LOG.fine("JMX2Insights THE attributeelement being compared: " + _stCandidateElement + " to " + mbean_attribute_element_headers[i]);
+				//Agent.LOG.fine("JMXHarvester THE attributeelement being compared: " + _stCandidateElement + " to " + mbean_attribute_element_headers[i]);
 				if (_stCandidateElement.equalsIgnoreCase(mbean_attribute_element_headers[i])) {
 					
 					__bRC = true;
